@@ -67,6 +67,10 @@ cp .env.example .env
 nano .env          # set DOMAIN and BASE_URL to your real subdomain, e.g. kb.example.com
 ```
 
+You also need to set `KB_AUTH_HTPASSWD` in `.env` before launching — see
+[Access control](#access-control--password-protected-vs-shareable-link-content) below.
+Everything under `/family` is gated by it, so the site won't start correctly without it set.
+
 ---
 
 ## Step 5 — Launch
@@ -95,6 +99,76 @@ docker compose up -d --build         # rebuilds the static site with new notes
 
 ---
 
+## Access control — password-protected vs. shareable-link content
+
+This site supports two ways to keep content out of the fully-public default, without
+making the whole site private:
+
+1. **Password-protected (`family/` folder).** Anything saved under `family/` in the
+   Obsidian vault (`md-notebook/family/`) builds to `/family/*` and requires a single
+   shared password to view. The password is checked by Traefik before the request ever
+   reaches the app — nothing in the site itself needs to know about it.
+2. **Shareable link, not indexed (`unlisted: true`).** Add `unlisted: true` to a note's
+   frontmatter anywhere in the vault to keep it public but hidden from the site's nav
+   sidebar, on-site search, the graph view, `sitemap.xml`, the RSS feed, and search
+   engines (a `noindex` tag is added automatically). The page still builds normally and
+   works for anyone who has the direct URL — send that URL to whoever you want to share
+   it with.
+
+   ```markdown
+   ---
+   title: Grandma's 80th Birthday
+   unlisted: true
+   ---
+   ```
+
+   This is obscurity, not access control — anyone who gets the link (or a link to it
+   from another page) can view or forward it. Use the `family/` folder instead if a
+   page needs an actual password.
+
+### One-time setup: generate the shared password
+
+```bash
+# No local install needed — runs htpasswd from a throwaway container.
+docker run --rm httpd:2.4-alpine htpasswd -nbB familyuser 'YOUR_PASSWORD'
+```
+
+Copy the full `familyuser:$2y$05$....` output into `.env`:
+
+```bash
+KB_AUTH_HTPASSWD=familyuser:$2y$05$....
+```
+
+(Paste the hash as-is — no need to escape the `$` signs; that's only required when a
+hash is written directly into `docker-compose.yml` labels, not when it comes from `.env`.)
+
+Then apply it:
+
+```bash
+docker compose up -d --build
+```
+
+### Verify it's working
+
+```bash
+# Protected path — should return 401 Unauthorized without credentials
+curl -I https://<your-domain>/family/
+
+# Same path with the password — should return 200
+curl -I -u familyuser:YOUR_PASSWORD https://<your-domain>/family/
+
+# Rest of the site — should still be 200, no auth needed
+curl -I https://<your-domain>/
+```
+
+### Changing or rotating the password
+
+Regenerate the hash with the `htpasswd` command above, update `KB_AUTH_HTPASSWD` in
+`.env`, then `docker compose up -d` to apply. No rebuild of the site image is needed —
+this only touches Traefik's routing config.
+
+---
+
 ## Troubleshooting
 
 - **404 from Traefik ("no route"):** router rule/host mismatch, or container not on the `proxy` network, or `traefik.enable=true` missing.
@@ -105,23 +179,16 @@ docker compose up -d --build         # rebuilds the static site with new notes
 
 ## Optional Hardening (not enabled by default)
 
-### Add a shared password — as a Traefik middleware
+### Password-protect the entire site, not just `/family`
 
-Generate an htpasswd hash (bcrypt), then add a basic-auth middleware and attach it to the router. No change to the app image.
-
-```bash
-# Generate 'user:hash' (escape $ as $$ if pasting into docker-compose labels)
-htpasswd -nbB admin 'YOUR_PASSWORD'
-```
-
-Add labels to the `kb` service in `docker-compose.yml`:
+By default only `/family/*` requires the shared password (see
+[Access control](#access-control--password-protected-vs-shareable-link-content) above).
+To require it site-wide instead, reuse the same `kb-auth` middleware on the public
+router in `docker-compose.yml`:
 
 ```yaml
-      - "traefik.http.middlewares.kb-auth.basicauth.users=admin:$$2y$$05$$...."
       - "traefik.http.routers.kb.middlewares=kb-sec,kb-auth"
 ```
-
-Run `docker compose up -d` to apply.
 
 ### Restrict to a specific IP range
 
