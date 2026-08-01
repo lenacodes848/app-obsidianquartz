@@ -17,7 +17,6 @@ services:
       - "traefik.http.routers.kb.entrypoints=websecure"
       - "traefik.http.routers.kb.tls=true"
       - "traefik.http.routers.kb.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.kb.priority=1"
       # SERVICE: tell Traefik which internal port the container serves on
       - "traefik.http.services.kb.loadbalancer.server.port=8080"
       # Belt-and-suspenders: pin which docker network Traefik should use to reach us
@@ -28,19 +27,12 @@ services:
       - "traefik.http.middlewares.kb-sec.headers.contentTypeNosniff=true"
       - "traefik.http.middlewares.kb-sec.headers.browserXssFilter=true"
       - "traefik.http.middlewares.kb-sec.headers.referrerPolicy=strict-origin-when-cross-origin"
-      - "traefik.http.routers.kb.middlewares=kb-sec"
-      # ROUTER (protected): same host, but only the /family path prefix — matched first
-      # (higher priority) so it wins over the catch-all router above for that path.
-      - "traefik.http.routers.kb-family.rule=Host(`${DOMAIN}`) && PathPrefix(`/family`)"
-      - "traefik.http.routers.kb-family.entrypoints=websecure"
-      - "traefik.http.routers.kb-family.tls=true"
-      - "traefik.http.routers.kb-family.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.kb-family.priority=100"
-      - "traefik.http.routers.kb-family.service=kb"
-      # BASIC AUTH middleware: single shared password, hash supplied via .env
-      # (KB_AUTH_HTPASSWD), never committed. See DEPLOY.md for how to generate it.
+      # BASIC AUTH middleware: single shared password for the entire site, hash
+      # supplied via .env (KB_AUTH_HTPASSWD), never committed. See DEPLOY.md for
+      # how to generate it. Applied to every path, including unlisted pages —
+      # a shareable link still requires the password once opened.
       - "traefik.http.middlewares.kb-auth.basicauth.users=${KB_AUTH_HTPASSWD}"
-      - "traefik.http.routers.kb-family.middlewares=kb-sec,kb-auth"
+      - "traefik.http.routers.kb.middlewares=kb-sec,kb-auth"
 
 networks:
   proxy:

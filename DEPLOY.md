@@ -68,8 +68,8 @@ nano .env          # set DOMAIN and BASE_URL to your real subdomain, e.g. kb.exa
 ```
 
 You also need to set `KB_AUTH_HTPASSWD` in `.env` before launching — see
-[Access control](#access-control--password-protected-vs-shareable-link-content) below.
-Everything under `/family` is gated by it, so the site won't start correctly without it set.
+[Access control](#access-control--site-wide-password-with-shareable-links) below.
+The entire site is gated by it, so it won't start correctly without it set.
 
 ---
 
@@ -99,32 +99,29 @@ docker compose up -d --build         # rebuilds the static site with new notes
 
 ---
 
-## Access control — password-protected vs. shareable-link content
+## Access control — site-wide password with shareable links
 
-This site supports two ways to keep content out of the fully-public default, without
-making the whole site private:
+The entire site sits behind a single shared password, checked by Traefik before any
+request reaches the app — nothing in the site itself needs to know about it. There's no
+public/unauthenticated tier: every page, including the ones below, requires the
+password once opened.
 
-1. **Password-protected (`family/` folder).** Anything saved under `family/` in the
-   Obsidian vault (`md-notebook/family/`) builds to `/family/*` and requires a single
-   shared password to view. The password is checked by Traefik before the request ever
-   reaches the app — nothing in the site itself needs to know about it.
-2. **Shareable link, not indexed (`unlisted: true`).** Add `unlisted: true` to a note's
-   frontmatter anywhere in the vault to keep it public but hidden from the site's nav
-   sidebar, on-site search, the graph view, `sitemap.xml`, the RSS feed, and search
-   engines (a `noindex` tag is added automatically). The page still builds normally and
-   works for anyone who has the direct URL — send that URL to whoever you want to share
-   it with.
+**Shareable links (`unlisted: true`).** Add `unlisted: true` to a note's frontmatter
+to keep it out of the site's nav sidebar, on-site search, the graph view,
+`sitemap.xml`, and the RSS feed (a `noindex` tag is added too, for what it's worth
+behind a password wall). The page still builds normally at its usual URL — send that
+URL to whoever you want to share it with, and they'll be prompted for the site
+password the same as anywhere else on the site.
 
-   ```markdown
-   ---
-   title: Grandma's 80th Birthday
-   unlisted: true
-   ---
-   ```
+```markdown
+---
+title: Grandma's 80th Birthday
+unlisted: true
+---
+```
 
-   This is obscurity, not access control — anyone who gets the link (or a link to it
-   from another page) can view or forward it. Use the `family/` folder instead if a
-   page needs an actual password.
+This keeps a page out of casual browsing/search even for people who already know the
+password, while still requiring the password for anyone following the link.
 
 ### One-time setup: generate the shared password
 
@@ -151,14 +148,14 @@ docker compose up -d --build
 ### Verify it's working
 
 ```bash
-# Protected path — should return 401 Unauthorized without credentials
-curl -I https://<your-domain>/family/
-
-# Same path with the password — should return 200
-curl -I -u familyuser:YOUR_PASSWORD https://<your-domain>/family/
-
-# Rest of the site — should still be 200, no auth needed
+# No credentials — should return 401 Unauthorized
 curl -I https://<your-domain>/
+
+# With the password — should return 200
+curl -I -u familyuser:YOUR_PASSWORD https://<your-domain>/
+
+# An unlisted page — same as above: 401 without credentials, 200 with them
+curl -I -u familyuser:YOUR_PASSWORD https://<your-domain>/path/to/unlisted-page
 ```
 
 ### Changing or rotating the password
@@ -179,22 +176,12 @@ this only touches Traefik's routing config.
 
 ## Optional Hardening (not enabled by default)
 
-### Password-protect the entire site, not just `/family`
-
-By default only `/family/*` requires the shared password (see
-[Access control](#access-control--password-protected-vs-shareable-link-content) above).
-To require it site-wide instead, reuse the same `kb-auth` middleware on the public
-router in `docker-compose.yml`:
-
-```yaml
-      - "traefik.http.routers.kb.middlewares=kb-sec,kb-auth"
-```
-
 ### Restrict to a specific IP range
 
-Add a Traefik IP-allowlist middleware:
+Add a Traefik IP-allowlist middleware on top of the existing ones (order matters —
+this runs the IP check before basic auth):
 
 ```yaml
       - "traefik.http.middlewares.kb-ip.ipallowlist.sourcerange=203.0.113.0/24,198.51.100.7/32"
-      - "traefik.http.routers.kb.middlewares=kb-sec,kb-ip"
+      - "traefik.http.routers.kb.middlewares=kb-ip,kb-sec,kb-auth"
 ```
