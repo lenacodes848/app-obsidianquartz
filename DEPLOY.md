@@ -67,6 +67,11 @@ cp .env.example .env
 nano .env          # set DOMAIN and BASE_URL to your real subdomain, e.g. kb.example.com
 ```
 
+You also need to set `KB_AUTH_HTPASSWD` in `.env` before launching — see
+[Access control](#access-control--site-wide-password-with-shareable-links) below.
+The entire site is gated by it, and `docker compose up` will refuse to start
+(hard error, not just a warning) if it's unset.
+
 ---
 
 ## Step 5 — Launch
@@ -95,6 +100,74 @@ docker compose up -d --build         # rebuilds the static site with new notes
 
 ---
 
+## Access control — site-wide password with shareable links
+
+The entire site sits behind a single shared password, checked by Traefik before any
+request reaches the app — nothing in the site itself needs to know about it. There's no
+public/unauthenticated tier: every page, including the ones below, requires the
+password once opened.
+
+**Shareable links (`unlisted: true`).** Add `unlisted: true` to a note's frontmatter
+to keep it out of the site's nav sidebar, on-site search, the graph view,
+`sitemap.xml`, the RSS feed, folder listings, tag listings, and the Backlinks panel
+of any page it links to or from (a `noindex` tag is added too, for what it's worth
+behind a password wall). The page still builds normally at its usual URL — send that
+URL to whoever you want to share it with, and they'll be prompted for the site
+password the same as anywhere else on the site.
+
+```markdown
+---
+title: Grandma's 80th Birthday
+unlisted: true
+---
+```
+
+This keeps a page out of casual browsing/search even for people who already know the
+password, while still requiring the password for anyone following the link.
+
+### One-time setup: generate the shared password
+
+```bash
+# No local install needed — runs htpasswd from a throwaway container.
+docker run --rm httpd:2.4-alpine htpasswd -nbB familyuser 'YOUR_PASSWORD'
+```
+
+Copy the full `familyuser:$2y$05$....` output into `.env`:
+
+```bash
+KB_AUTH_HTPASSWD=familyuser:$2y$05$....
+```
+
+(Paste the hash as-is — no need to escape the `$` signs; that's only required when a
+hash is written directly into `docker-compose.yml` labels, not when it comes from `.env`.)
+
+Then apply it:
+
+```bash
+docker compose up -d --build
+```
+
+### Verify it's working
+
+```bash
+# No credentials — should return 401 Unauthorized
+curl -I https://<your-domain>/
+
+# With the password — should return 200
+curl -I -u familyuser:YOUR_PASSWORD https://<your-domain>/
+
+# An unlisted page — same as above: 401 without credentials, 200 with them
+curl -I -u familyuser:YOUR_PASSWORD https://<your-domain>/path/to/unlisted-page
+```
+
+### Changing or rotating the password
+
+Regenerate the hash with the `htpasswd` command above, update `KB_AUTH_HTPASSWD` in
+`.env`, then `docker compose up -d` to apply. No rebuild of the site image is needed —
+this only touches Traefik's routing config.
+
+---
+
 ## Troubleshooting
 
 - **404 from Traefik ("no route"):** router rule/host mismatch, or container not on the `proxy` network, or `traefik.enable=true` missing.
@@ -105,29 +178,12 @@ docker compose up -d --build         # rebuilds the static site with new notes
 
 ## Optional Hardening (not enabled by default)
 
-### Add a shared password — as a Traefik middleware
-
-Generate an htpasswd hash (bcrypt), then add a basic-auth middleware and attach it to the router. No change to the app image.
-
-```bash
-# Generate 'user:hash' (escape $ as $$ if pasting into docker-compose labels)
-htpasswd -nbB admin 'YOUR_PASSWORD'
-```
-
-Add labels to the `kb` service in `docker-compose.yml`:
-
-```yaml
-      - "traefik.http.middlewares.kb-auth.basicauth.users=admin:$$2y$$05$$...."
-      - "traefik.http.routers.kb.middlewares=kb-sec,kb-auth"
-```
-
-Run `docker compose up -d` to apply.
-
 ### Restrict to a specific IP range
 
-Add a Traefik IP-allowlist middleware:
+Add a Traefik IP-allowlist middleware on top of the existing ones (order matters —
+this runs the IP check before basic auth):
 
 ```yaml
       - "traefik.http.middlewares.kb-ip.ipallowlist.sourcerange=203.0.113.0/24,198.51.100.7/32"
-      - "traefik.http.routers.kb.middlewares=kb-sec,kb-ip"
+      - "traefik.http.routers.kb.middlewares=kb-ip,kb-sec,kb-auth"
 ```

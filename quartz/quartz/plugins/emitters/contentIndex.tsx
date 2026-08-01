@@ -123,6 +123,12 @@ export const ContentIndex: QuartzEmitterPlugin<Partial<Options>> = (opts) => {
       for (const [tree, file] of content) {
         const slug = file.data.slug!
         const date = getDate(ctx.cfg.configuration, file.data) ?? new Date()
+        // Pages with `unlisted: true` in frontmatter are still built and reachable by
+        // direct URL, but excluded from the index that powers Explorer, Search, Graph,
+        // sitemap.xml, and the RSS feed — they're shareable-link-only, not discoverable.
+        if (file.data.frontmatter?.unlisted) {
+          continue
+        }
         if (opts?.includeEmptyFiles || (file.data.text && file.data.text !== "")) {
           linkIndex.set(slug, {
             slug,

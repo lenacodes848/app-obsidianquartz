@@ -72,7 +72,9 @@ export const TagPage: QuartzEmitterPlugin<Partial<TagPageOptions>> = (userOpts) 
       return graph
     },
     async *emit(ctx, content, resources) {
-      const allFiles = content.map((c) => c[1].data)
+      // Exclude `unlisted: true` pages so they don't appear in tag listings
+      // (they're still built and reachable by direct URL — just not surfaced here).
+      const allFiles = content.map((c) => c[1].data).filter((data) => !data.frontmatter?.unlisted)
       const cfg = ctx.cfg.configuration
 
       const tags: Set<string> = new Set(

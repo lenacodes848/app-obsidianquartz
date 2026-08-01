@@ -27,7 +27,12 @@ services:
       - "traefik.http.middlewares.kb-sec.headers.contentTypeNosniff=true"
       - "traefik.http.middlewares.kb-sec.headers.browserXssFilter=true"
       - "traefik.http.middlewares.kb-sec.headers.referrerPolicy=strict-origin-when-cross-origin"
-      - "traefik.http.routers.kb.middlewares=kb-sec"
+      # BASIC AUTH middleware: single shared password for the entire site, hash
+      # supplied via .env (KB_AUTH_HTPASSWD), never committed. See DEPLOY.md for
+      # how to generate it. Applied to every path, including unlisted pages —
+      # a shareable link still requires the password once opened.
+      - "traefik.http.middlewares.kb-auth.basicauth.users=${KB_AUTH_HTPASSWD:?KB_AUTH_HTPASSWD must be set in .env — see DEPLOY.md}"
+      - "traefik.http.routers.kb.middlewares=kb-sec,kb-auth"
 
 networks:
   proxy:
