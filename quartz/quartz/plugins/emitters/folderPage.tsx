@@ -70,7 +70,9 @@ export const FolderPage: QuartzEmitterPlugin<Partial<FolderPageOptions>> = (user
       return graph
     },
     async *emit(ctx, content, resources) {
-      const allFiles = content.map((c) => c[1].data)
+      // Exclude `unlisted: true` pages so they don't appear in folder listings
+      // (they're still built and reachable by direct URL — just not surfaced here).
+      const allFiles = content.map((c) => c[1].data).filter((data) => !data.frontmatter?.unlisted)
       const cfg = ctx.cfg.configuration
 
       const folders: Set<SimpleSlug> = new Set(

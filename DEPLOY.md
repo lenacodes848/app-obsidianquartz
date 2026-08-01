@@ -69,7 +69,8 @@ nano .env          # set DOMAIN and BASE_URL to your real subdomain, e.g. kb.exa
 
 You also need to set `KB_AUTH_HTPASSWD` in `.env` before launching — see
 [Access control](#access-control--site-wide-password-with-shareable-links) below.
-The entire site is gated by it, so it won't start correctly without it set.
+The entire site is gated by it, and `docker compose up` will refuse to start
+(hard error, not just a warning) if it's unset.
 
 ---
 
@@ -108,7 +109,8 @@ password once opened.
 
 **Shareable links (`unlisted: true`).** Add `unlisted: true` to a note's frontmatter
 to keep it out of the site's nav sidebar, on-site search, the graph view,
-`sitemap.xml`, and the RSS feed (a `noindex` tag is added too, for what it's worth
+`sitemap.xml`, the RSS feed, folder listings, tag listings, and the Backlinks panel
+of any page it links to or from (a `noindex` tag is added too, for what it's worth
 behind a password wall). The page still builds normally at its usual URL — send that
 URL to whoever you want to share it with, and they'll be prompted for the site
 password the same as anywhere else on the site.
