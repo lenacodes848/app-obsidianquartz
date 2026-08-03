@@ -129,13 +129,17 @@ password, while still requiring the password for anyone following the link.
 
 ```bash
 # No local install needed — runs htpasswd from a throwaway container.
-docker run --rm httpd:2.4-alpine htpasswd -nbB familyuser 'YOUR_PASSWORD'
+# -C 12 sets the bcrypt cost factor explicitly (htpasswd's default is 5,
+# which is too cheap to crack offline if the hash ever leaks — cost is
+# exponential, so 12 is ~128x more work per guess than the default, at
+# negligible login latency for a handful of users).
+docker run --rm httpd:2.4-alpine htpasswd -nbBC 12 familyuser 'YOUR_PASSWORD'
 ```
 
-Copy the full `familyuser:$2y$05$....` output into `.env`:
+Copy the full `familyuser:$2y$12$....` output into `.env`:
 
 ```bash
-KB_AUTH_HTPASSWD=familyuser:$2y$05$....
+KB_AUTH_HTPASSWD=familyuser:$2y$12$....
 ```
 
 (Paste the hash as-is — no need to escape the `$` signs; that's only required when a

@@ -32,7 +32,13 @@ services:
       # how to generate it. Applied to every path, including unlisted pages —
       # a shareable link still requires the password once opened.
       - "traefik.http.middlewares.kb-auth.basicauth.users=${KB_AUTH_HTPASSWD:?KB_AUTH_HTPASSWD must be set in .env — see DEPLOY.md}"
-      - "traefik.http.routers.kb.middlewares=kb-sec,kb-auth"
+      # RATE LIMIT middleware: throttles requests per source IP before basic
+      # auth is even checked, so scripted password-guessing gets slowed down
+      # instead of running at full network speed. Generous enough that a
+      # normal page load (many CSS/JS/image requests at once) won't trip it.
+      - "traefik.http.middlewares.kb-ratelimit.ratelimit.average=10"
+      - "traefik.http.middlewares.kb-ratelimit.ratelimit.burst=20"
+      - "traefik.http.routers.kb.middlewares=kb-ratelimit,kb-sec,kb-auth"
 
 networks:
   proxy:
