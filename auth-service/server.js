@@ -1,12 +1,22 @@
 'use strict';
 
 const http = require('http');
-const crypto = require('crypto');
 const querystring = require('querystring');
 const bcrypt = require('bcryptjs');
+const {
+  COOKIE_NAME,
+  escapeHtml,
+  normalizeAnswer,
+  constantTimeStringEqual,
+  issueSessionCookie,
+  clearSessionCookie,
+  parseCookies,
+  isValidSession,
+  sanitizeRedirect,
+  isSameOriginRequest,
+} = require('./lib');
 
 const PORT = 8081;
-const COOKIE_NAME = 'kb_session';
 const SESSION_DAYS = 90;
 const LOGIN_PATH = '/_kb-auth/login';
 const VERIFY_PATH = '/_kb-auth/verify';
@@ -39,98 +49,6 @@ try {
 } catch (err) {
   console.error(`KB_SECURITY_QUESTIONS is invalid: ${err.message}`);
   process.exit(1);
-}
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function normalizeAnswer(str) {
-  return String(str || '').trim().toLowerCase();
-}
-
-// Converts a variable-length comparison into a fixed-length one so string
-// length/content differences aren't observable via timing.
-function constantTimeStringEqual(a, b) {
-  const digestA = crypto.createHash('sha256').update(a).digest();
-  const digestB = crypto.createHash('sha256').update(b).digest();
-  return crypto.timingSafeEqual(digestA, digestB);
-}
-
-function sign(payload) {
-  return crypto.createHmac('sha256', SESSION_SECRET).update(payload).digest('hex');
-}
-
-function issueSessionCookie() {
-  const exp = Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000;
-  const payload = Buffer.from(JSON.stringify({ exp })).toString('base64url');
-  const sig = sign(payload);
-  const maxAge = SESSION_DAYS * 24 * 60 * 60;
-  return `${COOKIE_NAME}=${payload}.${sig}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
-}
-
-function clearSessionCookie() {
-  return `${COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
-}
-
-function parseCookies(header) {
-  const out = {};
-  if (!header) return out;
-  for (const part of header.split(';')) {
-    const idx = part.indexOf('=');
-    if (idx === -1) continue;
-    out[part.slice(0, idx).trim()] = part.slice(idx + 1).trim();
-  }
-  return out;
-}
-
-function isValidSession(cookieValue) {
-  if (!cookieValue) return false;
-  const dot = cookieValue.lastIndexOf('.');
-  if (dot === -1) return false;
-  const payload = cookieValue.slice(0, dot);
-  const sig = cookieValue.slice(dot + 1);
-  const expectedSig = sign(payload);
-  const sigBuf = Buffer.from(sig, 'hex');
-  const expectedBuf = Buffer.from(expectedSig, 'hex');
-  if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
-    return false;
-  }
-  try {
-    const { exp } = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    return typeof exp === 'number' && exp > Date.now();
-  } catch {
-    return false;
-  }
-}
-
-// Only ever allow redirecting back to a same-origin relative path — never an
-// absolute/external URL — to avoid turning the login page into an open redirect.
-//
-// This has to be done by actually parsing the URL (the same way a browser
-// would), not by pattern-matching the raw string: browsers normalize leading
-// backslashes and stray whitespace/control characters into slashes before
-// resolving a URL, so naive checks like "doesn't start with // and has no
-// ://" are bypassable with values like "/\evil.com" or "/\t/evil.com" (a
-// tab character), both of which a browser resolves to https://evil.com/
-// despite starting with a single "/". Resolving against a fixed internal
-// base and comparing origins catches all of these the same way the browser
-// itself would interpret them.
-const REDIRECT_BASE = 'http://kb-auth-internal.invalid';
-function sanitizeRedirect(rd) {
-  if (!rd || typeof rd !== 'string') return '/';
-  try {
-    const parsed = new URL(rd, REDIRECT_BASE);
-    if (parsed.origin !== REDIRECT_BASE) return '/';
-    return parsed.pathname + parsed.search + parsed.hash;
-  } catch {
-    return '/';
-  }
 }
 
 function renderLoginPage({ rd, error }) {
@@ -169,6 +87,28 @@ function renderLoginPage({ rd, error }) {
 </html>`;
 }
 
+function renderLogoutConfirmPage() {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Log out</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 28rem; margin: 4rem auto; padding: 0 1rem; }
+  button { margin-top: 1rem; padding: 0.6rem 1.2rem; font-size: 1rem; cursor: pointer; }
+</style>
+</head>
+<body>
+  <h1>Log out</h1>
+  <form method="post" action="${LOGOUT_PATH}">
+    <button type="submit">Log out</button>
+  </form>
+</body>
+</html>`;
+}
+
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
@@ -195,6 +135,14 @@ const server = http.createServer(async (req, res) => {
     const body = querystring.parse(await readBody(req));
     const rd = sanitizeRedirect(body.rd);
 
+    // CSRF guard: a forged cross-site submission wouldn't carry a matching
+    // Origin/Referer. Checked before touching credentials.
+    if (!isSameOriginRequest(req)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Forbidden');
+      return;
+    }
+
     // bcrypt.compare (not compareSync) so this doesn't block the event loop —
     // this same process also answers /verify for every other page load on
     // the site, so a synchronous ~200ms hash compare here would stall
@@ -211,7 +159,7 @@ const server = http.createServer(async (req, res) => {
 
     if (passwordOk && answersOk) {
       res.writeHead(302, {
-        'Set-Cookie': issueSessionCookie(),
+        'Set-Cookie': issueSessionCookie(SESSION_SECRET, SESSION_DAYS),
         Location: rd,
       });
       res.end();
@@ -223,15 +171,17 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Intentionally not reachable via the public router (see docker-compose.yml
+  // kb-auth-pages rule) — only called internally by Traefik's forwardAuth on
+  // every request to the main site. Kept path-gated here too as defense in
+  // depth in case the router scoping ever changes.
   if (req.method === 'GET' && url.pathname === VERIFY_PATH) {
     const cookies = parseCookies(req.headers.cookie);
-    if (isValidSession(cookies[COOKIE_NAME])) {
+    if (isValidSession(cookies[COOKIE_NAME], SESSION_SECRET)) {
       res.writeHead(200);
       res.end();
       return;
     }
-    const host = req.headers['x-forwarded-host'] || req.headers.host || '';
-    const proto = req.headers['x-forwarded-proto'] || 'https';
     const uri = req.headers['x-forwarded-uri'] || '/';
     const rd = sanitizeRedirect(uri);
     const target = `${LOGIN_PATH}?rd=${encodeURIComponent(rd)}`;
@@ -240,7 +190,21 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // GET just shows a confirmation button — no state change — so a bare link
+  // or <img> can no longer log someone out. The actual logout only happens
+  // on POST, which carries the same Origin/Referer check as login.
   if (req.method === 'GET' && url.pathname === LOGOUT_PATH) {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(renderLogoutConfirmPage());
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === LOGOUT_PATH) {
+    if (!isSameOriginRequest(req)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Forbidden');
+      return;
+    }
     res.writeHead(302, {
       'Set-Cookie': clearSessionCookie(),
       Location: '/',

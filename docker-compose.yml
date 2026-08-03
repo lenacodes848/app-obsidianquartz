@@ -49,18 +49,26 @@ services:
     networks:
       - proxy
     # NO "ports:" section — reached over the proxy network only, both by
-    # Traefik's forwardauth call above and by browsers hitting /_kb-auth/*.
+    # Traefik's internal forwardauth call above (any path) and by browsers
+    # hitting /_kb-auth/login or /_kb-auth/logout specifically (see the
+    # kb-auth-pages router rule below — /verify is deliberately excluded).
     environment:
       - KB_AUTH_HTPASSWD=${KB_AUTH_HTPASSWD:?KB_AUTH_HTPASSWD must be set in .env — see DEPLOY.md}
       - KB_SECURITY_QUESTIONS=${KB_SECURITY_QUESTIONS:?KB_SECURITY_QUESTIONS must be set in .env — see DEPLOY.md}
       - KB_SESSION_SECRET=${KB_SESSION_SECRET:?KB_SESSION_SECRET must be set in .env — see DEPLOY.md}
     labels:
       - "traefik.enable=true"
-      # ROUTER: the login/verify/logout pages, on the same host, under a
-      # reserved path prefix. Higher priority than the kb router below so
-      # these paths never get routed through kb-forwardauth (which would
-      # loop — you can't require login to reach the login page).
-      - "traefik.http.routers.kb-auth-pages.rule=Host(`${DOMAIN}`) && PathPrefix(`/_kb-auth`)"
+      # ROUTER: the login/logout pages only, on the same host. Higher
+      # priority than the kb router below so these paths never get routed
+      # through kb-forwardauth (which would loop — you can't require login to
+      # reach the login page). Deliberately scoped to just these two exact
+      # paths — /_kb-auth/verify is NOT included here. Traefik's forwardauth
+      # call above reaches kb-auth-service directly over the proxy network
+      # and never goes through this (or any) router, so /verify doesn't need
+      # to be — and shouldn't be — publicly reachable: it would otherwise let
+      # anyone probe "is this cookie still valid?" from outside without
+      # loading a real page.
+      - "traefik.http.routers.kb-auth-pages.rule=Host(`${DOMAIN}`) && (Path(`/_kb-auth/login`) || Path(`/_kb-auth/logout`))"
       - "traefik.http.routers.kb-auth-pages.entrypoints=websecure"
       - "traefik.http.routers.kb-auth-pages.tls=true"
       - "traefik.http.routers.kb-auth-pages.tls.certresolver=letsencrypt"
