@@ -111,10 +111,26 @@ function isValidSession(cookieValue) {
 
 // Only ever allow redirecting back to a same-origin relative path — never an
 // absolute/external URL — to avoid turning the login page into an open redirect.
+//
+// This has to be done by actually parsing the URL (the same way a browser
+// would), not by pattern-matching the raw string: browsers normalize leading
+// backslashes and stray whitespace/control characters into slashes before
+// resolving a URL, so naive checks like "doesn't start with // and has no
+// ://" are bypassable with values like "/\evil.com" or "/\t/evil.com" (a
+// tab character), both of which a browser resolves to https://evil.com/
+// despite starting with a single "/". Resolving against a fixed internal
+// base and comparing origins catches all of these the same way the browser
+// itself would interpret them.
+const REDIRECT_BASE = 'http://kb-auth-internal.invalid';
 function sanitizeRedirect(rd) {
   if (!rd || typeof rd !== 'string') return '/';
-  if (!rd.startsWith('/') || rd.startsWith('//') || rd.includes('://')) return '/';
-  return rd;
+  try {
+    const parsed = new URL(rd, REDIRECT_BASE);
+    if (parsed.origin !== REDIRECT_BASE) return '/';
+    return parsed.pathname + parsed.search + parsed.hash;
+  } catch {
+    return '/';
+  }
 }
 
 function renderLoginPage({ rd, error }) {
@@ -179,10 +195,19 @@ const server = http.createServer(async (req, res) => {
     const body = querystring.parse(await readBody(req));
     const rd = sanitizeRedirect(body.rd);
 
-    const passwordOk = typeof body.password === 'string' && bcrypt.compareSync(body.password, PASSWORD_HASH);
-    const answersOk = QUESTIONS.every((entry, i) =>
+    // bcrypt.compare (not compareSync) so this doesn't block the event loop —
+    // this same process also answers /verify for every other page load on
+    // the site, so a synchronous ~200ms hash compare here would stall
+    // everyone else browsing at that moment.
+    const passwordOk = typeof body.password === 'string' && (await bcrypt.compare(body.password, PASSWORD_HASH));
+    // .map().every() rather than .every() directly: .every() short-circuits
+    // on the first false, and while each individual comparison is constant
+    // time, the *number* of comparisons performed still leaks (via timing)
+    // how many leading questions were answered correctly. Mapping first
+    // forces every entry to be checked regardless of earlier results.
+    const answersOk = QUESTIONS.map((entry, i) =>
       constantTimeStringEqual(normalizeAnswer(body[`q${i}`]), normalizeAnswer(entry.a))
-    );
+    ).every(Boolean);
 
     if (passwordOk && answersOk) {
       res.writeHead(302, {
