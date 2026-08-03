@@ -190,6 +190,12 @@ error, not a hint about which field was wrong), then submit the correct password
 and all correct answers — you should land back on the page you started from, and
 navigating elsewhere on the site shouldn't prompt again.
 
+To confirm logout works: visit `https://<your-domain>/_kb-auth/logout` — this
+shows a confirmation page rather than logging you out immediately (a bare link or
+`<img>` tag can't trigger a logout by itself). Click the "Log out" button to
+actually clear the session; you should be redirected to `/` and prompted to log in
+again on your next page load.
+
 ### Changing or rotating credentials (do this every ~3 months)
 
 1. Regenerate the password hash with the `htpasswd` command above (if you're
@@ -213,6 +219,7 @@ navigating elsewhere on the site shouldn't prompt again.
 - **Cert not issued:** DNS A record not resolving to the VPS yet, or the subdomain wasn't reachable on port 80 for the HTTP-01 challenge.
 - **`kb-auth-service` won't start / exits immediately:** check `docker compose logs kb-auth` — it hard-fails on boot if `KB_SECURITY_QUESTIONS` isn't valid JSON, or if any of the three required env vars is unset. The error message names which one.
 - **Redirect loop on the login page:** the `kb-auth-pages` router's `priority` must stay higher than the main `kb` router's, and its `middlewares` label must **not** include `kb-forwardauth` — otherwise reaching the login page itself requires being already logged in.
+- **403 Forbidden on `/_kb-auth/login` or `/_kb-auth/logout`:** these two endpoints check the request's `Origin`/`Referer` header against its own `Host` before accepting the submission (CSRF protection) — a 403 means one of those headers was present but didn't match, which is expected for a genuine cross-site attempt. It should **not** happen for a normal browser submitting the actual form: the check only fails closed on a *mismatch*, not on the headers being absent, so an ordinary login/logout POST always gets through. If you see this unexpectedly, look for something rewriting `Host`/`Origin`/`Referer` between the browser and Traefik — e.g. a CDN or another reverse proxy sitting in front of this stack — rather than the browser itself.
 
 ---
 
