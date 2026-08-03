@@ -16,6 +16,7 @@ Write in Obsidian  →  git push  →  VPS pulls & rebuilds Docker image  →  L
 - **Quartz** turns those notes into a static site with wikilinks, backlinks, graph view, and search.
 - **nginx** (inside a Docker container) serves the built HTML.
 - **Traefik** (already running on the VPS) handles HTTPS and routes traffic to the container.
+- **`kb-auth-service`** (another small container, `auth-service/`) gates every request behind a login page — password + security questions — before Traefik lets it through.
 
 ---
 
@@ -95,15 +96,43 @@ app-obsidian-quartz/
 ├── md-notebook/        # your Obsidian vault — edit this
 │   └── index.md        # homepage
 ├── quartz/             # Quartz v4.4.1 source (vendored, do not edit)
+├── auth-service/       # login gate: password + security questions (server.js)
 ├── Dockerfile          # builds the static site, then serves it with nginx
-├── docker-compose.yml  # one service; plugs into Traefik via Docker labels
+├── docker-compose.yml  # two services (kb, kb-auth); plugs into Traefik via Docker labels
 ├── nginx.conf          # minimal static file server config (port 8080)
-├── .env.example        # copy to .env and fill in DOMAIN + BASE_URL
+├── .env.example        # copy to .env and fill in DOMAIN, BASE_URL, and auth settings
 └── DEPLOY.md           # full VPS deployment runbook
 ```
 
 ---
 
-## Adding password protection later
+## Access control
 
-The site is public by default. To add a shared password, see the **Optional Hardening** section in [`DEPLOY.md`](./DEPLOY.md) — it's a two-label change to `docker-compose.yml`, no rebuild of the app image required.
+The entire site requires logging in — password + security questions, checked by
+`kb-auth-service` before Traefik proxies anything through. See the
+[Access control](./DEPLOY.md#access-control--password--security-questions-with-shareable-links)
+section in `DEPLOY.md` for setup and the quarterly rotation routine.
+
+## Traefik stack changes for this feature
+
+**None expected.** The existing Traefik stack lives on the VPS and isn't part of
+this repo, but every routing/auth feature so far — TLS, security headers, rate
+limiting, and now this login gate — was wired up entirely through Docker labels on
+this repo's own containers (`docker-compose.yml`). Traefik's Docker provider picks
+up labels from any container on the shared `proxy` network, and `forwardAuth` (what
+gates the site now) is a core Traefik middleware, not a plugin — so the same holds
+here: you shouldn't need to touch the separate Traefik stack's own config at all.
+
+If it doesn't work out of the box after `git pull && docker compose up -d --build`,
+check on the VPS (against the *actual* Traefik container, not this repo):
+
+```bash
+docker logs <traefik-container> | grep -i kb-auth   # confirms the new router/middleware were picked up
+docker inspect <traefik-container> --format '{{.Config.Cmd}}'   # confirm --providers.docker is present
+```
+
+If the Docker label provider turns out not to be enabled there (unlikely, since the
+existing `kb` labels already work today), that would be the one scenario needing a
+manual edit to the Traefik stack's own compose/static config — see
+[Traefik's Docker provider docs](https://doc.traefik.io/traefik/providers/docker/)
+for what to add.

@@ -1,0 +1,17 @@
+{
+  "name": "kb-auth-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Password + security-questions login gate for the KB, called by Traefik forwardAuth.",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3"
+  }
+}

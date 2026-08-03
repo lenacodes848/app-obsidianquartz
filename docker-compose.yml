@@ -27,18 +27,54 @@ services:
       - "traefik.http.middlewares.kb-sec.headers.contentTypeNosniff=true"
       - "traefik.http.middlewares.kb-sec.headers.browserXssFilter=true"
       - "traefik.http.middlewares.kb-sec.headers.referrerPolicy=strict-origin-when-cross-origin"
-      # BASIC AUTH middleware: single shared password for the entire site, hash
-      # supplied via .env (KB_AUTH_HTPASSWD), never committed. See DEPLOY.md for
-      # how to generate it. Applied to every path, including unlisted pages —
-      # a shareable link still requires the password once opened.
-      - "traefik.http.middlewares.kb-auth.basicauth.users=${KB_AUTH_HTPASSWD:?KB_AUTH_HTPASSWD must be set in .env — see DEPLOY.md}"
-      # RATE LIMIT middleware: throttles requests per source IP before basic
-      # auth is even checked, so scripted password-guessing gets slowed down
+      # RATE LIMIT middleware: throttles requests per source IP before the
+      # forward-auth check even runs, so scripted guessing gets slowed down
       # instead of running at full network speed. Generous enough that a
       # normal page load (many CSS/JS/image requests at once) won't trip it.
       - "traefik.http.middlewares.kb-ratelimit.ratelimit.average=10"
       - "traefik.http.middlewares.kb-ratelimit.ratelimit.burst=20"
-      - "traefik.http.routers.kb.middlewares=kb-ratelimit,kb-sec,kb-auth"
+      # FORWARD AUTH middleware: delegates the "is this request allowed?"
+      # check to kb-auth-service (password + security questions, see
+      # auth-service/). Applied to every path, including unlisted pages — a
+      # shareable link still requires login once opened.
+      - "traefik.http.middlewares.kb-forwardauth.forwardauth.address=http://kb-auth-service:8081/_kb-auth/verify"
+      - "traefik.http.routers.kb.middlewares=kb-ratelimit,kb-sec,kb-forwardauth"
+
+  kb-auth:
+    build:
+      context: ./auth-service
+    image: kb-auth-service:latest
+    container_name: kb-auth-service
+    restart: unless-stopped
+    networks:
+      - proxy
+    # NO "ports:" section — reached over the proxy network only, both by
+    # Traefik's forwardauth call above and by browsers hitting /_kb-auth/*.
+    environment:
+      - KB_AUTH_HTPASSWD=${KB_AUTH_HTPASSWD:?KB_AUTH_HTPASSWD must be set in .env — see DEPLOY.md}
+      - KB_SECURITY_QUESTIONS=${KB_SECURITY_QUESTIONS:?KB_SECURITY_QUESTIONS must be set in .env — see DEPLOY.md}
+      - KB_SESSION_SECRET=${KB_SESSION_SECRET:?KB_SESSION_SECRET must be set in .env — see DEPLOY.md}
+    labels:
+      - "traefik.enable=true"
+      # ROUTER: the login/verify/logout pages, on the same host, under a
+      # reserved path prefix. Higher priority than the kb router below so
+      # these paths never get routed through kb-forwardauth (which would
+      # loop — you can't require login to reach the login page).
+      - "traefik.http.routers.kb-auth-pages.rule=Host(`${DOMAIN}`) && PathPrefix(`/_kb-auth`)"
+      - "traefik.http.routers.kb-auth-pages.entrypoints=websecure"
+      - "traefik.http.routers.kb-auth-pages.tls=true"
+      - "traefik.http.routers.kb-auth-pages.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.kb-auth-pages.priority=100"
+      - "traefik.http.routers.kb-auth-pages.middlewares=kb-sec,kb-ratelimit-login"
+      - "traefik.http.services.kb-auth.loadbalancer.server.port=8081"
+      - "traefik.docker.network=proxy"
+      # RATE LIMIT middleware just for the login endpoint: much stricter than
+      # the site-wide kb-ratelimit, since security-question answers are
+      # lower-entropy than a bcrypt password and deserve tighter throttling
+      # on the one endpoint where guessing actually matters.
+      - "traefik.http.middlewares.kb-ratelimit-login.ratelimit.average=5"
+      - "traefik.http.middlewares.kb-ratelimit-login.ratelimit.period=1m"
+      - "traefik.http.middlewares.kb-ratelimit-login.ratelimit.burst=10"
 
 networks:
   proxy:
