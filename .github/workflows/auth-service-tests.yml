@@ -1,0 +1,26 @@
+name: auth-service tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "auth-service/**"
+      - ".github/workflows/auth-service-tests.yml"
+  pull_request:
+    paths:
+      - "auth-service/**"
+      - ".github/workflows/auth-service-tests.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: auth-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: node --test
