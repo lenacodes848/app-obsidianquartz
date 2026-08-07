@@ -113,8 +113,20 @@ function readBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
     req.on('data', (chunk) => {
+      if (data.length > 1e6) return; // already rejected below; ignore further chunks
       data += chunk;
-      if (data.length > 1e6) req.destroy();
+      // Reject directly rather than calling req.destroy() here: destroy()
+      // with no argument only emits 'close' (never 'end' or 'error'), so a
+      // caller awaiting this promise would hang forever once the guard
+      // trips. Just as important, destroy() tears down the *socket* that
+      // the response also needs — calling it here would make it impossible
+      // for the caller to send back a clean error response at all (the
+      // connection resets instead). The stream stays in flowing mode (we're
+      // already subscribed to 'data'), so the rest of an oversized body is
+      // drained and discarded harmlessly; 'end' still fires once the client
+      // finishes sending, but resolve() there is a no-op by then since a
+      // promise only settles once.
+      if (data.length > 1e6) reject(new Error('Request body too large'));
     });
     req.on('end', () => resolve(data));
     req.on('error', reject);
@@ -132,7 +144,22 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && url.pathname === LOGIN_PATH) {
-    const body = querystring.parse(await readBody(req));
+    let body;
+    try {
+      body = querystring.parse(await readBody(req));
+    } catch {
+      // Oversized or malformed body — readBody() rejects rather than
+      // hanging (see its own comment). Respond and stop instead of letting
+      // this become an unhandled rejection, which would crash the process.
+      // Connection: close rather than leaving this keep-alive: readBody()
+      // deliberately doesn't destroy the socket (that would kill this very
+      // response too), so any of an oversized body still in flight is
+      // drained in the background rather than interleaved with whatever the
+      // client sends next on the same connection.
+      res.writeHead(413, { 'Content-Type': 'text/plain; charset=utf-8', Connection: 'close' });
+      res.end('Payload Too Large');
+      return;
+    }
     const rd = sanitizeRedirect(body.rd);
 
     // CSRF guard: a forged cross-site submission wouldn't carry a matching
