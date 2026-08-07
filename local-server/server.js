@@ -257,6 +257,16 @@ const server = http.createServer(async (req, res) => {
   serveStatic(req, res, () => sendNotFound(req, res));
 });
 
+// Defense-in-depth fallback: Node's built-in headersTimeout/requestTimeout
+// only bound how long it takes to *receive* a request — they don't cover a
+// handler that hangs indefinitely while producing a response (e.g. if
+// readBody()'s promise logic ever regressed to neither resolve nor reject).
+// This guarantees a connection idle for longer than REQUEST_TIMEOUT_MS gets
+// torn down instead of hanging forever, regardless of which code path
+// caused the hang.
+const REQUEST_TIMEOUT_MS = 30_000;
+server.setTimeout(REQUEST_TIMEOUT_MS, (socket) => socket.destroy());
+
 server.listen(PORT, () => {
   console.log(`notes server listening on ${PORT}`);
 });
