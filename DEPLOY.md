@@ -400,3 +400,30 @@ be redirected to `/` and prompted to log in again on your next visit.
 - **Port already in use:** something else on the server already has 8286, or `.env`'s `PORT` collides with another service — check `docker compose -f docker-compose.local.yml ps` and pick a free port.
 - **Can't reach it from Tailscale but LAN works (or vice versa):** confirm the container is listening on `0.0.0.0`, not `127.0.0.1` — `docker port app-obsidianquartz-local` should show the mapping.
 - **403 Forbidden on `/_notes-auth/login` or `/_notes-auth/logout`:** the `Origin`/`Referer` CSRF check failed — shouldn't happen for a normal browser submission; look for something rewriting those headers in between.
+
+---
+
+# Updating the vendored Quartz engine
+
+`quartz/` is a [`git subtree`](https://www.atlassian.com/git/tutorials/git-subtree) tracking [jackyzha0/quartz](https://github.com/jackyzha0/quartz), currently at `v4.4.1`. This applies to both deployment modes above — they build from the same `quartz/`.
+
+The upstream remote isn't stored in the repo (git remotes are per-clone, not tracked), so add it once per clone before pulling:
+
+```bash
+git remote add quartz-upstream https://github.com/jackyzha0/quartz.git   # first time only, per clone
+git fetch quartz-upstream
+git subtree pull --prefix=quartz quartz-upstream <tag-or-main> --squash
+```
+
+Replace `<tag-or-main>` with the upstream tag you want to update to (e.g. `v4.5.0`) or `main` for the latest unreleased code.
+
+**6 files carry local customizations** (password-protected `/family` folder + `unlisted: true` shareable-link pages, added in PRs on top of the vanilla vendor) and are the files most likely to need manual conflict resolution on a pull — keep our logic, take upstream's surrounding changes:
+
+- `quartz/quartz.config.ts` (just `pageTitle`/`baseUrl` — trivial to resolve)
+- `quartz/quartz/components/Head.tsx`
+- `quartz/quartz/plugins/emitters/contentIndex.tsx`
+- `quartz/quartz/plugins/emitters/contentPage.tsx`
+- `quartz/quartz/plugins/emitters/folderPage.tsx`
+- `quartz/quartz/plugins/emitters/tagPage.tsx`
+
+Everything else under `quartz/` should merge cleanly. After a pull, rebuild and manually check a page under `/family` and a page flagged `unlisted: true` still behave as documented above before deploying.
