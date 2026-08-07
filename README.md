@@ -83,7 +83,7 @@ A few conventions that keep the site tidy:
 ### 2. Commit and push
 
 ```bash
-cd /path/to/app-obsidian-quartz
+cd /path/to/app-obsidianquartz
 git add md-notebook/
 git commit -m "add: <brief description of what you wrote>"
 git push
