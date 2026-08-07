@@ -1,0 +1,29 @@
+# ---- Stage 1: build the static site with Quartz ----
+FROM node:22-bookworm-slim AS build
+WORKDIR /app
+
+# Install deps first for layer caching
+COPY quartz/package.json quartz/package-lock.json* ./
+RUN npm ci
+
+# Quartz source + the vault as its content
+COPY quartz/ ./
+COPY md-notebook/ ./content/
+
+# Domain injected at build time; defaults to localhost for local testing
+ARG BASE_URL=localhost
+RUN sed -i "s|__BASE_URL__|${BASE_URL}|g" quartz.config.ts
+
+# Outputs static site to /app/public
+RUN npx quartz build
+
+# ---- Stage 2: password gate + static file server ----
+FROM node:22-alpine AS serve
+WORKDIR /app
+COPY local-server/package.json local-server/package-lock.json* ./
+RUN npm ci --omit=dev
+COPY local-server/lib.js local-server/server.js ./
+COPY --from=build /app/public ./public
+EXPOSE 8080
+USER node
+CMD ["node", "server.js"]
