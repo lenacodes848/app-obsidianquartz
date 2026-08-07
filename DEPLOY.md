@@ -65,7 +65,7 @@ If it's missing, the Traefik stack isn't up — start it first.
 ## Step 4 — Clone and configure
 
 ```bash
-git clone https://github.com/linnali577/app-obsidian-quartz.git knowledge-base
+git clone https://github.com/lenacodes848/app-obsidianquartz.git knowledge-base
 cd knowledge-base
 cp .env.example .env
 nano .env          # set DOMAIN and BASE_URL to your real subdomain, e.g. kb.example.com
