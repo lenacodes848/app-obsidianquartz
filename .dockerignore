@@ -3,6 +3,8 @@
 node_modules
 quartz/node_modules
 quartz/public
+quartz/quartz/.quartz-cache
+public
 .env
 DEPLOY.md
 BUILD_PLAN.md

@@ -2,3 +2,5 @@
 .obsidian
 .env
 node_modules
+quartz/quartz/.quartz-cache
+public

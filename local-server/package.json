@@ -1,0 +1,19 @@
+{
+  "name": "notes-ai-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Password login gate + static file server for the notes site.",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "sirv": "^3.0.2"
+  }
+}

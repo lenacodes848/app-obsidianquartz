@@ -1,13 +1,14 @@
 'use strict';
 
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const querystring = require('querystring');
 const bcrypt = require('bcryptjs');
+const sirv = require('sirv');
 const {
   COOKIE_NAME,
   escapeHtml,
-  normalizeAnswer,
-  constantTimeStringEqual,
   issueSessionCookie,
   clearSessionCookie,
   parseCookies,
@@ -16,11 +17,11 @@ const {
   isSameOriginRequest,
 } = require('./lib');
 
-const PORT = 8081;
+const PORT = Number(process.env.PORT) || 8080;
 const SESSION_DAYS = 90;
-const LOGIN_PATH = '/_kb-auth/login';
-const VERIFY_PATH = '/_kb-auth/verify';
-const LOGOUT_PATH = '/_kb-auth/logout';
+const LOGIN_PATH = '/_notes-auth/login';
+const LOGOUT_PATH = '/_notes-auth/logout';
+const STATIC_DIR = path.join(__dirname, 'public');
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -31,33 +32,11 @@ function requireEnv(name) {
   return value;
 }
 
-const AUTH_HTPASSWD = requireEnv('KB_AUTH_HTPASSWD');
-const SESSION_SECRET = requireEnv('KB_SESSION_SECRET');
+const AUTH_HTPASSWD = requireEnv('NOTES_AUTH_HTPASSWD');
+const SESSION_SECRET = requireEnv('NOTES_SESSION_SECRET');
 const PASSWORD_HASH = AUTH_HTPASSWD.slice(AUTH_HTPASSWD.indexOf(':') + 1);
 
-let QUESTIONS;
-try {
-  QUESTIONS = JSON.parse(requireEnv('KB_SECURITY_QUESTIONS'));
-  if (!Array.isArray(QUESTIONS) || QUESTIONS.length === 0) {
-    throw new Error('must be a non-empty JSON array');
-  }
-  for (const entry of QUESTIONS) {
-    if (typeof entry.q !== 'string' || typeof entry.a !== 'string') {
-      throw new Error('each entry needs string "q" and "a" fields');
-    }
-  }
-} catch (err) {
-  console.error(`KB_SECURITY_QUESTIONS is invalid: ${err.message}`);
-  process.exit(1);
-}
-
 function renderLoginPage({ rd, error }) {
-  const questionFields = QUESTIONS.map(
-    (entry, i) => `
-      <label for="q${i}">${escapeHtml(entry.q)}</label>
-      <input type="text" id="q${i}" name="q${i}" autocomplete="off" required>`
-  ).join('\n');
-
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -79,8 +58,7 @@ function renderLoginPage({ rd, error }) {
   <form method="post" action="${LOGIN_PATH}">
     <input type="hidden" name="rd" value="${escapeHtml(rd)}">
     <label for="password">Password</label>
-    <input type="password" id="password" name="password" autocomplete="off" required>
-    ${questionFields}
+    <input type="password" id="password" name="password" autocomplete="current-password" required autofocus>
     <button type="submit">Sign in</button>
   </form>
 </body>
@@ -133,6 +111,33 @@ function readBody(req) {
   });
 }
 
+// Serves the Quartz build output, gated behind a valid session cookie. Only
+// reached once isValidSession has already passed (see the main handler
+// below) — sirv itself has no notion of auth, it just serves files.
+const serveStatic = sirv(STATIC_DIR, { etag: true });
+
+// sirv's own send() hardcodes a 200/206 status for any file it finds, so it
+// can't be reused to serve 404.html *with* a 404 status. Quartz's build
+// output doesn't change while the process is running, so it's simplest and
+// cheapest to just read the 404 page into memory once at startup and hand it
+// back directly.
+let notFoundBody;
+try {
+  notFoundBody = fs.readFileSync(path.join(STATIC_DIR, '404.html'));
+} catch {
+  notFoundBody = null;
+}
+
+function sendNotFound(req, res) {
+  if (notFoundBody) {
+    res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(notFoundBody);
+  } else {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Not found');
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://internal');
 
@@ -171,20 +176,12 @@ const server = http.createServer(async (req, res) => {
     }
 
     // bcrypt.compare (not compareSync) so this doesn't block the event loop —
-    // this same process also answers /verify for every other page load on
-    // the site, so a synchronous ~200ms hash compare here would stall
-    // everyone else browsing at that moment.
+    // this same process also serves every static file on the site, so a
+    // synchronous ~200ms hash compare here would stall anyone else browsing
+    // at that moment.
     const passwordOk = typeof body.password === 'string' && (await bcrypt.compare(body.password, PASSWORD_HASH));
-    // .map().every() rather than .every() directly: .every() short-circuits
-    // on the first false, and while each individual comparison is constant
-    // time, the *number* of comparisons performed still leaks (via timing)
-    // how many leading questions were answered correctly. Mapping first
-    // forces every entry to be checked regardless of earlier results.
-    const answersOk = QUESTIONS.map((entry, i) =>
-      constantTimeStringEqual(normalizeAnswer(body[`q${i}`]), normalizeAnswer(entry.a))
-    ).every(Boolean);
 
-    if (passwordOk && answersOk) {
+    if (passwordOk) {
       res.writeHead(302, {
         'Set-Cookie': issueSessionCookie(SESSION_SECRET, SESSION_DAYS),
         Location: rd,
@@ -194,32 +191,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     res.writeHead(401, { 'Content-Type': 'text/html; charset=utf-8' });
-    res.end(renderLoginPage({ rd, error: 'Incorrect — check your password and answers.' }));
-    return;
-  }
-
-  // Intentionally not reachable via the public router (see docker-compose.yml
-  // kb-auth-pages rule) — only called internally by Traefik's forwardAuth on
-  // every request to the main site. Kept path-gated here too as defense in
-  // depth in case the router scoping ever changes.
-  if (req.method === 'GET' && url.pathname === VERIFY_PATH) {
-    const cookies = parseCookies(req.headers.cookie);
-    if (isValidSession(cookies[COOKIE_NAME], SESSION_SECRET)) {
-      res.writeHead(200);
-      res.end();
-      return;
-    }
-    const uri = req.headers['x-forwarded-uri'] || '/';
-    const rd = sanitizeRedirect(uri);
-    const target = `${LOGIN_PATH}?rd=${encodeURIComponent(rd)}`;
-    res.writeHead(302, { Location: target });
-    res.end();
+    res.end(renderLoginPage({ rd, error: 'Incorrect password.' }));
     return;
   }
 
   // GET just shows a confirmation button — no state change — so a bare link
-  // or <img> can no longer log someone out. The actual logout only happens
-  // on POST, which carries the same Origin/Referer check as login.
+  // or <img> can't log someone out. The actual logout only happens on POST,
+  // which carries the same Origin/Referer check as login.
   if (req.method === 'GET' && url.pathname === LOGOUT_PATH) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(renderLogoutConfirmPage());
@@ -240,10 +218,21 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  res.writeHead(404);
-  res.end();
+  // Everything else: the actual notes site. Gated behind a valid session —
+  // this is the single choke point every other path funnels through, so
+  // there's exactly one place auth can go wrong instead of it being spread
+  // across a reverse-proxy config and an app config that both have to agree.
+  const cookies = parseCookies(req.headers.cookie);
+  if (!isValidSession(cookies[COOKIE_NAME], SESSION_SECRET)) {
+    const rd = sanitizeRedirect(url.pathname + url.search);
+    res.writeHead(302, { Location: `${LOGIN_PATH}?rd=${encodeURIComponent(rd)}` });
+    res.end();
+    return;
+  }
+
+  serveStatic(req, res, () => sendNotFound(req, res));
 });
 
 server.listen(PORT, () => {
-  console.log(`kb-auth-service listening on ${PORT}`);
+  console.log(`notes server listening on ${PORT}`);
 });

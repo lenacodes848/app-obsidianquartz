@@ -1,4 +1,8 @@
+# Public deployment (VPS + Traefik)
+
 This is a read-only public deployment behind the VPS's existing Traefik. It publishes no host ports and manages no certificates.
+
+> This covers the **public** deployment mode. For the alternative **local** mode (single container on a private LAN/Tailscale server, no reverse proxy, password-only login), skip to [Local deployment (LAN/Tailscale)](#local-deployment-lantailscale) below.
 
 ---
 
@@ -237,3 +241,162 @@ the allowed range could still reach `/_kb-auth/login` and attempt to log in:
       - "traefik.http.routers.kb.middlewares=kb-ip,kb-sec,kb-forwardauth"
       - "traefik.http.routers.kb-auth-pages.middlewares=kb-ip,kb-sec,kb-ratelimit-login"
 ```
+
+---
+
+# Local deployment (LAN/Tailscale)
+
+This deploys as a single Docker container that binds directly to a host port — no
+reverse proxy, no public DNS, no TLS certificate. It's reachable on your home
+network's LAN and, when you're away, over Tailscale. This runs from the same repo
+as the public deployment above, using `docker-compose.local.yml` instead of
+`docker-compose.yml` — the two modes don't conflict and can run on the same or
+different machines.
+
+## Why plain HTTP (no reverse proxy, no cert)
+
+- There's no public IP on this server, so there's nothing for Let's Encrypt's HTTP-01 challenge to reach.
+- Tailscale's own tunnel already encrypts traffic end-to-end (WireGuard) when you connect away from home, so a second layer of TLS isn't adding real protection.
+- On your home LAN, you're already inside a trusted network boundary.
+
+**Do not port-forward this on your router.** Nothing here requires it, and doing so would put the login page directly on the open internet.
+
+---
+
+## Local deployment — Prerequisites
+
+- A Linux server (Debian/Ubuntu) with Docker and the Docker Compose plugin installed.
+- Tailscale already installed and authenticated on the server, if you want remote access away from home.
+
+---
+
+## Local deployment — Step 1: Docker
+
+Skip if already installed:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl git
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+  https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo usermod -aG docker $USER   # log out/in after this
+```
+
+---
+
+## Local deployment — Step 2: Firewall
+
+If `ufw` is active, allow the port only from your LAN subnet and the Tailscale interface:
+
+```bash
+sudo ufw status
+# Example (adjust the subnet to match your home network):
+# sudo ufw allow in on tailscale0 to any port 8286 proto tcp
+# sudo ufw allow from 192.168.42.0/24 to any port 8286 proto tcp
+```
+
+If you're also running the public deployment's containers on this same machine, this doesn't conflict — Traefik owns 80/443, this owns 8286.
+
+---
+
+## Local deployment — Step 3: Clone and configure
+
+```bash
+git clone https://github.com/lenacodes848/app-obsidianquartz.git app-obsidianquartz
+cd app-obsidianquartz
+cp .env.example .env
+nano .env          # set PORT (default 8286) and, optionally, BASE_URL
+```
+
+You also need to set `NOTES_AUTH_HTPASSWD` and `NOTES_SESSION_SECRET` in `.env`
+before launching — see [Access control (local deployment)](#access-control-local-deployment)
+below. These are independent of the public deployment's `KB_*` variables — use a
+different password. `docker compose -f docker-compose.local.yml up` will refuse to
+start if either is unset.
+
+---
+
+## Local deployment — Step 4: Launch
+
+```bash
+docker compose -f docker-compose.local.yml up -d --build
+docker compose -f docker-compose.local.yml logs -f notes-local    # confirm it started: "notes server listening on 8286"
+```
+
+Visit `http://<server-lan-ip>:8286` from your home network, or `http://<server-tailscale-ip>:8286` from Tailscale.
+
+---
+
+## Local deployment — Step 5: Updating content later
+
+```bash
+cd app-obsidianquartz
+git pull
+docker compose -f docker-compose.local.yml up -d --build
+```
+
+---
+
+## Access control (local deployment)
+
+The entire site sits behind a login page (password only) served by `local-server/`.
+There's no public/unauthenticated tier — every page requires logging in once
+opened. Once logged in, a session cookie is good for 90 days.
+
+### One-time setup
+
+**1. Password:**
+
+```bash
+docker run --rm httpd:2.4-alpine htpasswd -nbBC 12 linna 'YOUR_PASSWORD'
+```
+
+Copy the full `linna:$2y$12$....` output into `.env` as `NOTES_AUTH_HTPASSWD`.
+
+**2. Session secret** — generate once:
+
+```bash
+openssl rand -hex 32
+```
+
+Paste the output into `.env` as `NOTES_SESSION_SECRET`.
+
+Then apply it:
+
+```bash
+docker compose -f docker-compose.local.yml up -d --build
+```
+
+### Verify it's working
+
+```bash
+curl -I http://localhost:8286/   # no session — should redirect (302) to /_notes-auth/login
+```
+
+Then in a browser: visit the site, confirm you're redirected to the login page,
+submit the wrong password (confirm a generic error), then the correct password —
+you should land back on the page you started from.
+
+To confirm logout works: visit `/_notes-auth/logout`, click "Log out" — you should
+be redirected to `/` and prompted to log in again on your next visit.
+
+### Changing or rotating the password
+
+1. Regenerate the password hash with the `htpasswd` command above.
+2. **Also regenerate `NOTES_SESSION_SECRET`** at the same time — this instantly invalidates every existing session cookie.
+3. `docker compose -f docker-compose.local.yml up -d` to apply — no `--build` needed for a rotation.
+
+---
+
+## Troubleshooting (local deployment)
+
+- **Container won't start / exits immediately:** `docker compose -f docker-compose.local.yml logs notes-local` — hard-fails on boot if `NOTES_AUTH_HTPASSWD` or `NOTES_SESSION_SECRET` is unset.
+- **Port already in use:** something else on the server already has 8286, or `.env`'s `PORT` collides with another service — check `docker compose -f docker-compose.local.yml ps` and pick a free port.
+- **Can't reach it from Tailscale but LAN works (or vice versa):** confirm the container is listening on `0.0.0.0`, not `127.0.0.1` — `docker port app-obsidianquartz-local` should show the mapping.
+- **403 Forbidden on `/_notes-auth/login` or `/_notes-auth/logout`:** the `Origin`/`Referer` CSRF check failed — shouldn't happen for a normal browser submission; look for something rewriting those headers in between.

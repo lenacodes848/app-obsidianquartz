@@ -1,0 +1,21 @@
+services:
+  notes-local:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+      args:
+        BASE_URL: ${BASE_URL:-localhost}
+    image: app-obsidianquartz-local:latest
+    container_name: app-obsidianquartz-local
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - NOTES_AUTH_HTPASSWD=${NOTES_AUTH_HTPASSWD:?NOTES_AUTH_HTPASSWD must be set in .env — see DEPLOY.md}
+      - NOTES_SESSION_SECRET=${NOTES_SESSION_SECRET:?NOTES_SESSION_SECRET must be set in .env — see DEPLOY.md}
+      - PORT=${PORT:-8286}
+    ports:
+      # Binds on all interfaces, so it's reachable both via the server's LAN
+      # IP (home network) and its Tailscale IP (remote). No public IP, no
+      # reverse proxy, no TLS termination here — see DEPLOY.md for why plain
+      # HTTP is the deliberate choice for this deployment mode.
+      - "${PORT:-8286}:${PORT:-8286}"
