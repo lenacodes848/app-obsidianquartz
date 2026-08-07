@@ -8,7 +8,6 @@ services:
     image: app-obsidianquartz-local:latest
     container_name: app-obsidianquartz-local
     restart: unless-stopped
-    env_file: .env
     environment:
       - NOTES_AUTH_HTPASSWD=${NOTES_AUTH_HTPASSWD:?NOTES_AUTH_HTPASSWD must be set in .env — see DEPLOY.md}
       - NOTES_SESSION_SECRET=${NOTES_SESSION_SECRET:?NOTES_SESSION_SECRET must be set in .env — see DEPLOY.md}
