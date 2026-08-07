@@ -7,6 +7,7 @@ const {
   issueSessionCookie,
   isValidSession,
   isSameOriginRequest,
+  createLoginRateLimiter,
 } = require('../lib');
 
 const SECRET = 'test-secret-only-for-unit-tests';
@@ -125,4 +126,37 @@ test('isSameOriginRequest: neither header present fails open (allowed)', () => {
 test('isSameOriginRequest: no Host header fails closed (rejected)', () => {
   const req = { headers: {} };
   assert.equal(isSameOriginRequest(req), false);
+});
+
+test('createLoginRateLimiter: allows up to capacity requests in a burst', () => {
+  const limiter = createLoginRateLimiter({ capacity: 10, refillPerMs: 5 / 60000 });
+  const now = 1000;
+  for (let i = 0; i < 10; i++) {
+    assert.equal(limiter.check('1.2.3.4', now), true, `request ${i + 1} should be allowed`);
+  }
+});
+
+test('createLoginRateLimiter: blocks the request after capacity is exhausted', () => {
+  const limiter = createLoginRateLimiter({ capacity: 10, refillPerMs: 5 / 60000 });
+  const now = 1000;
+  for (let i = 0; i < 10; i++) limiter.check('1.2.3.4', now);
+  assert.equal(limiter.check('1.2.3.4', now), false);
+});
+
+test('createLoginRateLimiter: refills over time', () => {
+  const limiter = createLoginRateLimiter({ capacity: 10, refillPerMs: 5 / 60000 });
+  const start = 1000;
+  for (let i = 0; i < 10; i++) limiter.check('1.2.3.4', start);
+  assert.equal(limiter.check('1.2.3.4', start), false);
+  // 5/min refill rate = 1 token per 12s.
+  assert.equal(limiter.check('1.2.3.4', start + 12000), true);
+  assert.equal(limiter.check('1.2.3.4', start + 12000), false);
+});
+
+test('createLoginRateLimiter: tracks each IP independently', () => {
+  const limiter = createLoginRateLimiter({ capacity: 10, refillPerMs: 5 / 60000 });
+  const now = 1000;
+  for (let i = 0; i < 10; i++) limiter.check('1.2.3.4', now);
+  assert.equal(limiter.check('1.2.3.4', now), false);
+  assert.equal(limiter.check('5.6.7.8', now), true);
 });

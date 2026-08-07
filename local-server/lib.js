@@ -118,6 +118,32 @@ function isSameOriginRequest(req) {
   return true;
 }
 
+// Token-bucket login rate limiter. There's no reverse proxy in front of this
+// server (unlike the public deployment's Traefik kb-ratelimit-login
+// middleware), so throttling has to happen here — matching Traefik's values
+// (average=5/min, burst=10) so behavior parity with the sibling deployment
+// is intentional, not arbitrary. `now` is injectable so this is testable
+// without fake timers. No pruning of stale buckets: this is a single-user
+// LAN/Tailscale deployment with a tiny, effectively-fixed set of client IPs,
+// so unbounded Map growth isn't a real concern here.
+function createLoginRateLimiter({ capacity = 10, refillPerMs = 5 / 60000 } = {}) {
+  const buckets = new Map(); // ip -> { tokens, last }
+  return {
+    check(ip, now = Date.now()) {
+      let bucket = buckets.get(ip);
+      if (!bucket) {
+        bucket = { tokens: capacity, last: now };
+        buckets.set(ip, bucket);
+      }
+      bucket.tokens = Math.min(capacity, bucket.tokens + (now - bucket.last) * refillPerMs);
+      bucket.last = now;
+      if (bucket.tokens < 1) return false;
+      bucket.tokens -= 1;
+      return true;
+    },
+  };
+}
+
 module.exports = {
   COOKIE_NAME,
   REDIRECT_BASE,
@@ -129,4 +155,5 @@ module.exports = {
   isValidSession,
   sanitizeRedirect,
   isSameOriginRequest,
+  createLoginRateLimiter,
 };

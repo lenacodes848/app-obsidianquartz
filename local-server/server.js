@@ -15,6 +15,7 @@ const {
   isValidSession,
   sanitizeRedirect,
   isSameOriginRequest,
+  createLoginRateLimiter,
 } = require('./lib');
 
 const PORT = Number(process.env.PORT) || 8080;
@@ -35,6 +36,8 @@ function requireEnv(name) {
 const AUTH_HTPASSWD = requireEnv('NOTES_AUTH_HTPASSWD');
 const SESSION_SECRET = requireEnv('NOTES_SESSION_SECRET');
 const PASSWORD_HASH = AUTH_HTPASSWD.slice(AUTH_HTPASSWD.indexOf(':') + 1);
+
+const loginRateLimiter = createLoginRateLimiter();
 
 function renderLoginPage({ rd, error }) {
   return `<!doctype html>
@@ -104,7 +107,11 @@ function readBody(req) {
       // drained and discarded harmlessly; 'end' still fires once the client
       // finishes sending, but resolve() there is a no-op by then since a
       // promise only settles once.
-      if (data.length > 1e6) reject(new Error('Request body too large'));
+      if (data.length > 1e6) {
+        const err = new Error('Request body too large');
+        err.code = 'PAYLOAD_TOO_LARGE';
+        reject(err);
+      }
     });
     req.on('end', () => resolve(data));
     req.on('error', reject);
@@ -149,20 +156,37 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && url.pathname === LOGIN_PATH) {
+    if (!loginRateLimiter.check(req.socket.remoteAddress)) {
+      res.writeHead(429, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Retry-After': '12',
+        Connection: 'close',
+      });
+      res.end('Too Many Requests');
+      return;
+    }
+
     let body;
     try {
       body = querystring.parse(await readBody(req));
-    } catch {
-      // Oversized or malformed body — readBody() rejects rather than
-      // hanging (see its own comment). Respond and stop instead of letting
-      // this become an unhandled rejection, which would crash the process.
-      // Connection: close rather than leaving this keep-alive: readBody()
-      // deliberately doesn't destroy the socket (that would kill this very
-      // response too), so any of an oversized body still in flight is
-      // drained in the background rather than interleaved with whatever the
-      // client sends next on the same connection.
-      res.writeHead(413, { 'Content-Type': 'text/plain; charset=utf-8', Connection: 'close' });
-      res.end('Payload Too Large');
+    } catch (err) {
+      if (err && err.code === 'PAYLOAD_TOO_LARGE') {
+        // readBody() rejects rather than hanging (see its own comment).
+        // Respond and stop instead of letting this become an unhandled
+        // rejection, which would crash the process. Connection: close
+        // rather than leaving this keep-alive: readBody() deliberately
+        // doesn't destroy the socket (that would kill this very response
+        // too), so any of an oversized body still in flight is drained in
+        // the background rather than interleaved with whatever the client
+        // sends next on the same connection.
+        res.writeHead(413, { 'Content-Type': 'text/plain; charset=utf-8', Connection: 'close' });
+        res.end('Payload Too Large');
+        return;
+      }
+      // Any other rejection is a genuine connection error (readBody()'s
+      // req.on('error', reject)) — the socket is already broken, the client
+      // is gone, and there's nothing to respond to. Writing to res here
+      // would risk throwing on the dead socket instead, so just stop.
       return;
     }
     const rd = sanitizeRedirect(body.rd);
