@@ -96,7 +96,10 @@ export const ContentPage: QuartzEmitterPlugin<Partial<FullPageLayout>> = (userOp
     },
     async *emit(ctx, content, resources) {
       const cfg = ctx.cfg.configuration
-      const allFiles = content.map((c) => c[1].data)
+      // Exclude `unlisted: true` pages so they don't leak into Backlinks panels
+      // on pages that link to/from them (they're still built and reachable by
+      // direct URL — just not surfaced here).
+      const allFiles = content.map((c) => c[1].data).filter((data) => !data.frontmatter?.unlisted)
 
       let containsIndex = false
       for (const [tree, file] of content) {
