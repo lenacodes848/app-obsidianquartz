@@ -182,6 +182,88 @@ app-obsidianquartz/
 
 ---
 
+## Using this as a template for a new vault
+
+Want to publish a *different* Obsidian vault with its own domain/port and its
+own login credentials, fully independent of this repo? That's a fresh copy,
+not a new folder in this one — each vault gets its own repo, `.env`, and
+deployed container(s).
+
+### 1. Copy the repo
+
+```bash
+git clone https://github.com/lenacodes848/app-obsidianquartz.git my-new-vault
+cd my-new-vault
+```
+
+**Keep the git history — don't `rm -rf .git`.** `quartz/` is tracked as a
+[`git subtree`](./DEPLOY.md#updating-the-vendored-quartz-engine), and
+`git subtree pull --squash` needs that history to know what's already been
+merged from upstream. Wiping it breaks that permanently: a later
+`git subtree pull` fails outright with
+`fatal: can't squash-merge: 'quartz' was never added.` — the only way back is
+re-vendoring Quartz from scratch instead of pulling incremental upstream
+updates. Keeping history also means this vault's commit log starts as a copy
+of this template's, `md-notebook/Cats/` (this repo's LFS test content) and
+`md-notebook/Clippings/` (placeholder content) included — both get removed
+in the next step regardless.
+
+### 2. Swap in your own vault
+
+```bash
+rm -rf md-notebook/Cats          # this repo's Git LFS test seed content — not yours to keep
+rm -rf md-notebook/Clippings     # or whatever placeholder content came with the clone
+```
+
+Copy your real Obsidian vault's files into `md-notebook/`, or start empty and
+write fresh notes there per [Adding content](#adding-content) above. The
+`.gitattributes` file (Git LFS tracking for images) is repo-level, not
+vault-specific — it carries over automatically and needs no changes.
+
+### 3. Rebrand the site
+
+In `quartz/quartz.config.ts`, change:
+
+```ts
+pageTitle: "Public Knowledge",   // -> your new site's name
+```
+
+(`baseUrl` doesn't need touching here — it's a build-time placeholder filled
+in from `.env`'s `BASE_URL` specifically, not `DOMAIN` — see the next step.)
+
+### 4. Generate fresh secrets — do not reuse this repo's `.env`
+
+Every credential in `.env` is specific to *this* deployment. Reusing them
+across two independent vaults means one shared password/session-signing key
+protects both — copy `.env.example` to `.env` and generate everything again
+from scratch, following [Access control](#access-control) below:
+
+- New `KB_AUTH_HTPASSWD`/`NOTES_AUTH_HTPASSWD` (`htpasswd`, not the same password)
+- New `KB_SECURITY_QUESTIONS` (public mode only)
+- New `KB_SESSION_SECRET`/`NOTES_SESSION_SECRET` (`openssl rand -hex 32`)
+- Your new `DOMAIN`/`BASE_URL` (public mode) or `PORT` (local mode)
+
+### 5. Push to a new remote and deploy
+
+`git clone` already points `origin` at this template's own repo, so repoint
+it rather than adding a second `origin` (which fails with
+`error: remote origin already exists.`):
+
+```bash
+git remote set-url origin <url-to-your-new-empty-repo>
+git add -A
+git commit -m "Initial import: my-new-vault"
+git push -u origin main
+```
+
+Works the same regardless of host — GitHub, GitLab, or a self-hosted Gitea
+instance all speak the same Git LFS protocol, so nothing above changes based
+on where the new repo lives. From here, follow [`DEPLOY.md`](./DEPLOY.md) for
+whichever deployment mode(s) you're using, same as any other instance —
+there's nothing template-specific left once the new repo exists.
+
+---
+
 ## Access control
 
 **Public deployment** — the entire site requires logging in with a password + security
