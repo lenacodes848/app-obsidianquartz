@@ -8,6 +8,7 @@ import {
   simplifySlug,
   splitAnchor,
   transformLink,
+  withCompressedImageExt,
 } from "../../util/path"
 import path from "path"
 import { visit } from "unist-util-visit"
@@ -147,6 +148,12 @@ export const CrawlLinks: QuartzTransformerPlugin<Partial<Options>> = (userOpts) 
 
                 if (!isAbsoluteUrl(node.properties.src)) {
                   let dest = node.properties.src as RelativeURL
+                  // match the build-time WebP re-encode in the Assets emitter;
+                  // covers wikilink embeds and standard Markdown image syntax
+                  // alike, since both reach this point as plain <img> nodes
+                  if (node.tagName === "img") {
+                    dest = withCompressedImageExt(dest) as RelativeURL
+                  }
                   dest = node.properties.src = transformLink(
                     file.data.slug!,
                     dest,

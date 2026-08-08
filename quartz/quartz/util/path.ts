@@ -279,6 +279,18 @@ export function getFileExtension(s: string): string | undefined {
   return s.match(/\.[A-Za-z0-9]+$/)?.[0]
 }
 
+// Raster formats re-encoded to WebP at build time by the Assets emitter; .gif is excluded so a single-frame re-encode doesn't destroy the animation.
+const compressibleImageExts = new Set([".png", ".jpg", ".jpeg"])
+
+/** Swaps a compressible image's extension for `.webp`, matching the Assets emitter's re-encode; shared with CrawlLinks so `<img src>` can't drift from the compressed filename. */
+export function withCompressedImageExt(s: string): string {
+  const ext = getFileExtension(s)
+  if (!ext || !compressibleImageExts.has(ext.toLowerCase())) {
+    return s
+  }
+  return s.slice(0, -ext.length) + ".webp"
+}
+
 function isRelativeSegment(s: string): boolean {
   return /^\.{0,2}$/.test(s)
 }

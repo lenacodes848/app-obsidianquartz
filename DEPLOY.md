@@ -417,13 +417,16 @@ git subtree pull --prefix=quartz quartz-upstream <tag-or-main> --squash
 
 Replace `<tag-or-main>` with the upstream tag you want to update to (e.g. `v4.5.0`) or `main` for the latest unreleased code.
 
-**6 files carry local customizations** (the `unlisted: true` shareable-link feature, added in PRs on top of the vanilla vendor) and are the files most likely to need manual conflict resolution on a pull — keep our logic, take upstream's surrounding changes:
+**9 files carry local customizations** and are the files most likely to need manual conflict resolution on a pull — keep our logic, take upstream's surrounding changes:
 
-- `quartz/quartz.config.ts` (just `pageTitle`/`baseUrl` — trivial to resolve)
-- `quartz/quartz/components/Head.tsx`
-- `quartz/quartz/plugins/emitters/contentIndex.tsx`
-- `quartz/quartz/plugins/emitters/contentPage.tsx`
-- `quartz/quartz/plugins/emitters/folderPage.tsx`
-- `quartz/quartz/plugins/emitters/tagPage.tsx`
+- `quartz/quartz.config.ts` (`pageTitle`/`baseUrl`, plus `lazyLoad: true` on `CrawlLinks` — trivial to resolve)
+- `quartz/quartz/components/Head.tsx` (`unlisted: true` shareable-link feature)
+- `quartz/quartz/plugins/emitters/contentIndex.tsx` (`unlisted: true` shareable-link feature)
+- `quartz/quartz/plugins/emitters/contentPage.tsx` (`unlisted: true` shareable-link feature)
+- `quartz/quartz/plugins/emitters/folderPage.tsx` (`unlisted: true` shareable-link feature)
+- `quartz/quartz/plugins/emitters/tagPage.tsx` (`unlisted: true` shareable-link feature)
+- `quartz/quartz/plugins/emitters/assets.ts` (build-time image compression — resizes and re-encodes `.png`/`.jpg`/`.jpeg` to WebP via `sharp` instead of a plain copy; see [IMAGE-OPTIMIZATION-PLAN.md](./IMAGE-OPTIMIZATION-PLAN.md))
+- `quartz/quartz/plugins/transformers/links.ts` (rewrites `<img src>` extensions to match the compressed output above, for both wikilink and standard Markdown image syntax)
+- `quartz/quartz/util/path.ts` (`withCompressedImageExt` — the shared extension-mapping helper used by both files above)
 
-Everything else under `quartz/` should merge cleanly. After a pull, rebuild and manually check that a page flagged `unlisted: true` still behaves as documented above before deploying.
+Everything else under `quartz/` should merge cleanly. After a pull, rebuild and manually check that a page flagged `unlisted: true` still behaves as documented above, and that images still render as WebP, before deploying.
