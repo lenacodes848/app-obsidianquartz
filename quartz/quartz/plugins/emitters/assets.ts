@@ -9,7 +9,8 @@ import { Argv } from "../../util/ctx"
 import { QuartzConfig } from "../../cfg"
 
 const filesToCopy = async (argv: Argv, cfg: QuartzConfig) => {
-  // glob all non MD files in content folder and copy it over
+  // glob all non MD files in content folder; copy them over, re-encoding
+  // compressible images to WebP along the way (see withCompressedImageExt)
   return await glob("**", argv.directory, ["**/*.md", ...cfg.configuration.ignorePatterns])
 }
 
