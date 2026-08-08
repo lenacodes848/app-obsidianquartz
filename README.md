@@ -189,20 +189,24 @@ own login credentials, fully independent of this repo? That's a fresh copy,
 not a new folder in this one — each vault gets its own repo, `.env`, and
 deployed container(s).
 
-### 1. Copy the repo, with a clean history
+### 1. Copy the repo
 
 ```bash
 git clone https://github.com/lenacodes848/app-obsidianquartz.git my-new-vault
 cd my-new-vault
-rm -rf .git
-git init -b main
 ```
 
-Starting history over (rather than forking/keeping this repo's commits) means
-none of *this* vault's content, commit log, or `md-notebook/Cats/` test seed
-data comes along for the ride. If you'd rather preserve the commit history —
-e.g. to keep crediting this template's authorship — `git clone` without the
-`rm -rf .git` step and just repoint `origin` in step 5 instead.
+**Keep the git history — don't `rm -rf .git`.** `quartz/` is tracked as a
+[`git subtree`](./DEPLOY.md#updating-the-vendored-quartz-engine), and
+`git subtree pull --squash` needs that history to know what's already been
+merged from upstream. Wiping it breaks that permanently: a later
+`git subtree pull` fails outright with
+`fatal: can't squash-merge: 'quartz' was never added.` — the only way back is
+re-vendoring Quartz from scratch instead of pulling incremental upstream
+updates. Keeping history also means this vault's commit log starts as a copy
+of this template's, `md-notebook/Cats/` (this repo's LFS test content) and
+`md-notebook/Clippings/` (placeholder content) included — both get removed
+in the next step regardless.
 
 ### 2. Swap in your own vault
 
@@ -225,7 +229,7 @@ pageTitle: "Public Knowledge",   // -> your new site's name
 ```
 
 (`baseUrl` doesn't need touching here — it's a build-time placeholder filled
-in from `.env`'s `BASE_URL`/`DOMAIN`, see the next step.)
+in from `.env`'s `BASE_URL` specifically, not `DOMAIN` — see the next step.)
 
 ### 4. Generate fresh secrets — do not reuse this repo's `.env`
 
@@ -241,8 +245,12 @@ from scratch, following [Access control](#access-control) below:
 
 ### 5. Push to a new remote and deploy
 
+`git clone` already points `origin` at this template's own repo, so repoint
+it rather than adding a second `origin` (which fails with
+`error: remote origin already exists.`):
+
 ```bash
-git remote add origin <url-to-your-new-empty-repo>
+git remote set-url origin <url-to-your-new-empty-repo>
 git add -A
 git commit -m "Initial import: my-new-vault"
 git push -u origin main
