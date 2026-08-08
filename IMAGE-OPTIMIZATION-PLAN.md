@@ -120,7 +120,7 @@ customization #1 in `DEPLOY.md`.
 
 ## Priority 3 — #28: Git LFS
 
-**Status: implemented** (PR pending — number filled in once opened).
+**Status: implemented in PR #38.**
 
 **Mechanics:** `.gitattributes` marks image extensions as LFS-tracked
 (`filter=lfs diff=lfs merge=lfs -text`). On `git add`, real bytes go to
