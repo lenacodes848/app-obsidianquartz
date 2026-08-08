@@ -9,7 +9,7 @@ import { Argv } from "../../util/ctx"
 import { QuartzConfig } from "../../cfg"
 
 const filesToCopy = async (argv: Argv, cfg: QuartzConfig) => {
-  // glob all non MD files in content folder and copy it over
+  // glob all non MD files in content folder
   return await glob("**", argv.directory, ["**/*.md", ...cfg.configuration.ignorePatterns])
 }
 
@@ -72,6 +72,8 @@ export const Assets: QuartzEmitterPlugin = () => {
         await fs.promises.mkdir(dir, { recursive: true }) // ensure dir exists
         await assertNotLfsPointer(src)
 
+        // compressible images are re-encoded to WebP here rather than copied
+        // verbatim (see withCompressedImageExt); everything else is a plain copy
         if (withCompressedImageExt(fp) !== fp) {
           await sharp(src)
             .resize({ width: maxImageWidth, withoutEnlargement: true })

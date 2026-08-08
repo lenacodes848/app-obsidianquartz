@@ -116,6 +116,35 @@ describe("transforms", () => {
     )
   })
 
+  test("withCompressedImageExt", () => {
+    // compressible formats -> .webp
+    assert.strictEqual(path.withCompressedImageExt("photo.png"), "photo.webp")
+    assert.strictEqual(path.withCompressedImageExt("photo.jpg"), "photo.webp")
+    assert.strictEqual(path.withCompressedImageExt("photo.jpeg"), "photo.webp")
+    assert.strictEqual(
+      path.withCompressedImageExt("content/nested/photo.png"),
+      "content/nested/photo.webp",
+    )
+
+    // case-insensitive, matching the Assets emitter's own extension check
+    assert.strictEqual(path.withCompressedImageExt("photo.PNG"), "photo.webp")
+    assert.strictEqual(path.withCompressedImageExt("photo.JPG"), "photo.webp")
+    assert.strictEqual(path.withCompressedImageExt("photo.JPEG"), "photo.webp")
+    assert.strictEqual(path.withCompressedImageExt("photo.Jpg"), "photo.webp")
+
+    // left untouched: .gif (would destroy animation), already-.webp, non-images
+    assert.strictEqual(path.withCompressedImageExt("anim.gif"), "anim.gif")
+    assert.strictEqual(path.withCompressedImageExt("anim.GIF"), "anim.GIF")
+    assert.strictEqual(path.withCompressedImageExt("photo.webp"), "photo.webp")
+    assert.strictEqual(path.withCompressedImageExt("note.md"), "note.md")
+    assert.strictEqual(path.withCompressedImageExt("clip.mp4"), "clip.mp4")
+
+    // multiple dots / no extension
+    assert.strictEqual(path.withCompressedImageExt("archive.tar.gz"), "archive.tar.gz")
+    assert.strictEqual(path.withCompressedImageExt("my.photo.png"), "my.photo.webp")
+    assert.strictEqual(path.withCompressedImageExt("noextension"), "noextension")
+  })
+
   test("transformInternalLink", () => {
     asserts(
       [
