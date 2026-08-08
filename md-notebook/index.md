@@ -1,8 +1,8 @@
 ---
-title: Public Knowledge
+title: obsidianquartz
 ---
 
-# Public Knowledge
+# obsidianquartz
 
 Three distinct topics live in this notebook — hospital billing, learning Chinese, and building software with AI. They look unrelated until you see the thread connecting them: **AI is rewriting the rules of work in all three domains at the same time**.
 

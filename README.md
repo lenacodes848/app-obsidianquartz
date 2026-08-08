@@ -1,4 +1,4 @@
-# Public Knowledge Base
+# obsidianquartz
 
 A personal knowledge graph published to the web. Notes are written in [Obsidian](https://obsidian.md/), version-controlled in this repo, and rendered as a static website using [Quartz v4](https://quartz.jzhao.xyz/). The site is served from a VPS behind Traefik and updates with a single `git push`.
 
@@ -27,7 +27,7 @@ Write in Obsidian  →  git push  →  VPS pulls & rebuilds Docker image  →  L
 - **Quartz** turns those notes into a static site with wikilinks, backlinks, graph view, and search.
 - **nginx** (inside a Docker container) serves the built HTML.
 - **Traefik** (already running on the VPS) handles HTTPS and routes traffic to the container.
-- **`kb-auth-service`** (another small container, `auth-service/`) gates every request behind a login page — password + security questions — before Traefik lets it through.
+- **`obsidianquartz-auth-service`** (another small container, `auth-service/`) gates every request behind a login page — password + security questions — before Traefik lets it through.
 
 For the local deployment mode, there's no Traefik/nginx split — see [How it works (local deployment)](#how-it-works-local-deployment) below.
 
@@ -112,7 +112,7 @@ That's it for the writing side.
 SSH into the VPS and run:
 
 ```bash
-cd knowledge-base
+cd obsidianquartz
 git pull
 docker compose up -d --build
 ```
@@ -121,9 +121,9 @@ The container rebuilds with the new content and goes live within a minute or two
 
 > **Tip — make it a one-liner:** add this to your shell aliases:
 > ```bash
-> alias kb-deploy='ssh user@your-vps "cd knowledge-base && git pull && docker compose up -d --build"'
+> alias obsidianquartz-deploy='ssh user@your-vps "cd obsidianquartz && git pull && docker compose up -d --build"'
 > ```
-> Then `kb-deploy` from your laptop triggers a full update.
+> Then `obsidianquartz-deploy` from your laptop triggers a full update.
 
 If you're running the local deployment instead (or as well), update it the same way on that server, using the local compose file:
 
@@ -142,8 +142,8 @@ auth gate in front of it — that's a separate container in `docker-compose.yml`
 so it's just for checking how the content itself renders):
 
 ```bash
-docker build --build-arg BASE_URL=localhost -t public-knowledge-kb:test .
-docker run --rm -p 8080:8080 public-knowledge-kb:test
+docker build --build-arg BASE_URL=localhost -t obsidianquartz:test .
+docker run --rm -p 8080:8080 obsidianquartz:test
 ```
 
 Open [http://localhost:8080](http://localhost:8080). Wikilinks, backlinks, graph view, and search all work the same as on the live site.
@@ -173,7 +173,7 @@ app-obsidianquartz/
 ├── local-server/             # local-deployment login gate + static file server: password only
 ├── Dockerfile                # public deployment: builds the static site, then serves it with nginx
 ├── Dockerfile.local          # local deployment: builds the static site, then serves it via local-server
-├── docker-compose.yml        # public deployment: two services (kb, kb-auth); plugs into Traefik via Docker labels
+├── docker-compose.yml        # public deployment: two services (obsidianquartz, obsidianquartz-auth); plugs into Traefik via Docker labels
 ├── docker-compose.local.yml  # local deployment: single service, binds directly to a host port
 ├── nginx.conf                # public deployment: minimal static file server config (port 8080)
 ├── .env.example               # copy to .env; fill in whichever mode's section(s) you're deploying
@@ -225,7 +225,7 @@ vault-specific — it carries over automatically and needs no changes.
 In `quartz/quartz.config.ts`, change:
 
 ```ts
-pageTitle: "Public Knowledge",   // -> your new site's name
+pageTitle: "obsidianquartz",   // -> your new site's name
 ```
 
 (`baseUrl` doesn't need touching here — it's a build-time placeholder filled
@@ -238,9 +238,9 @@ across two independent vaults means one shared password/session-signing key
 protects both — copy `.env.example` to `.env` and generate everything again
 from scratch, following [Access control](#access-control) below:
 
-- New `KB_AUTH_HTPASSWD`/`NOTES_AUTH_HTPASSWD` (`htpasswd`, not the same password)
-- New `KB_SECURITY_QUESTIONS` (public mode only)
-- New `KB_SESSION_SECRET`/`NOTES_SESSION_SECRET` (`openssl rand -hex 32`)
+- New `OBSIDIANQUARTZ_AUTH_HTPASSWD`/`NOTES_AUTH_HTPASSWD` (`htpasswd`, not the same password)
+- New `OBSIDIANQUARTZ_SECURITY_QUESTIONS` (public mode only)
+- New `OBSIDIANQUARTZ_SESSION_SECRET`/`NOTES_SESSION_SECRET` (`openssl rand -hex 32`)
 - Your new `DOMAIN`/`BASE_URL` (public mode) or `PORT` (local mode)
 
 ### 5. Push to a new remote and deploy
@@ -267,7 +267,7 @@ there's nothing template-specific left once the new repo exists.
 ## Access control
 
 **Public deployment** — the entire site requires logging in with a password + security
-questions, checked by `kb-auth-service` before Traefik proxies anything through. See the
+questions, checked by `obsidianquartz-auth-service` before Traefik proxies anything through. See the
 [Access control](./DEPLOY.md#access-control--password--security-questions-with-shareable-links)
 section in `DEPLOY.md` for setup and the quarterly rotation routine.
 
@@ -289,12 +289,12 @@ If it doesn't work out of the box after `git pull && docker compose up -d --buil
 check on the VPS (against the *actual* Traefik container, not this repo):
 
 ```bash
-docker logs <traefik-container> | grep -i kb-auth   # confirms the new router/middleware were picked up
+docker logs <traefik-container> | grep -i obsidianquartz-auth   # confirms the new router/middleware were picked up
 docker inspect <traefik-container> --format '{{.Config.Cmd}}'   # confirm --providers.docker is present
 ```
 
 If the Docker label provider turns out not to be enabled there (unlikely, since the
-existing `kb` labels already work today), that would be the one scenario needing a
+existing `obsidianquartz` labels already work today), that would be the one scenario needing a
 manual edit to the Traefik stack's own compose/static config — see
 [Traefik's Docker provider docs](https://doc.traefik.io/traefik/providers/docker/)
 for what to add.

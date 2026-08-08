@@ -1,8 +1,8 @@
 {
-  "name": "kb-auth-service",
+  "name": "obsidianquartz-auth-service",
   "version": "1.0.0",
   "private": true,
-  "description": "Password + security-questions login gate for the KB, called by Traefik forwardAuth.",
+  "description": "Password + security-questions login gate for obsidianquartz, called by Traefik forwardAuth.",
   "type": "commonjs",
   "main": "server.js",
   "scripts": {

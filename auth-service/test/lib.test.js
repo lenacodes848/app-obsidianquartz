@@ -12,8 +12,8 @@ const {
 const SECRET = 'test-secret-only-for-unit-tests';
 
 function extractCookieValue(setCookieHeader) {
-  const match = /^kb_session=([^;]+)/.exec(setCookieHeader);
-  assert.ok(match, 'expected a kb_session cookie in the Set-Cookie header');
+  const match = /^obsidianquartz_session=([^;]+)/.exec(setCookieHeader);
+  assert.ok(match, 'expected an obsidianquartz_session cookie in the Set-Cookie header');
   return match[1];
 }
 
@@ -93,37 +93,37 @@ test('isValidSession: expired session fails', () => {
 });
 
 test('isSameOriginRequest: matching Origin header passes', () => {
-  const req = { headers: { host: 'kb.example.com', origin: 'https://kb.example.com' } };
+  const req = { headers: { host: 'obsidianquartz.example.com', origin: 'https://obsidianquartz.example.com' } };
   assert.equal(isSameOriginRequest(req), true);
 });
 
 test('isSameOriginRequest: mismatched Origin header fails', () => {
-  const req = { headers: { host: 'kb.example.com', origin: 'https://evil.com' } };
+  const req = { headers: { host: 'obsidianquartz.example.com', origin: 'https://evil.com' } };
   assert.equal(isSameOriginRequest(req), false);
 });
 
 test('isSameOriginRequest: matching Referer header passes when Origin absent', () => {
-  const req = { headers: { host: 'kb.example.com', referer: 'https://kb.example.com/_kb-auth/login' } };
+  const req = { headers: { host: 'obsidianquartz.example.com', referer: 'https://obsidianquartz.example.com/_obsidianquartz-auth/login' } };
   assert.equal(isSameOriginRequest(req), true);
 });
 
 test('isSameOriginRequest: mismatched Referer header fails when Origin absent', () => {
-  const req = { headers: { host: 'kb.example.com', referer: 'https://evil.com/attack' } };
+  const req = { headers: { host: 'obsidianquartz.example.com', referer: 'https://evil.com/attack' } };
   assert.equal(isSameOriginRequest(req), false);
 });
 
 test('isSameOriginRequest: neither header present fails open (allowed)', () => {
-  const req = { headers: { host: 'kb.example.com' } };
+  const req = { headers: { host: 'obsidianquartz.example.com' } };
   assert.equal(isSameOriginRequest(req), true);
 });
 
 test('isSameOriginRequest: respects X-Forwarded-Host/Proto from Traefik', () => {
   const req = {
     headers: {
-      host: 'kb-auth-service:8081',
-      'x-forwarded-host': 'kb.example.com',
+      host: 'obsidianquartz-auth-service:8081',
+      'x-forwarded-host': 'obsidianquartz.example.com',
       'x-forwarded-proto': 'https',
-      origin: 'https://kb.example.com',
+      origin: 'https://obsidianquartz.example.com',
     },
   };
   assert.equal(isSameOriginRequest(req), true);

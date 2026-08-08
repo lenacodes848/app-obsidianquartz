@@ -18,9 +18,9 @@ const {
 
 const PORT = 8081;
 const SESSION_DAYS = 90;
-const LOGIN_PATH = '/_kb-auth/login';
-const VERIFY_PATH = '/_kb-auth/verify';
-const LOGOUT_PATH = '/_kb-auth/logout';
+const LOGIN_PATH = '/_obsidianquartz-auth/login';
+const VERIFY_PATH = '/_obsidianquartz-auth/verify';
+const LOGOUT_PATH = '/_obsidianquartz-auth/logout';
 
 function requireEnv(name) {
   const value = process.env[name];
@@ -31,13 +31,13 @@ function requireEnv(name) {
   return value;
 }
 
-const AUTH_HTPASSWD = requireEnv('KB_AUTH_HTPASSWD');
-const SESSION_SECRET = requireEnv('KB_SESSION_SECRET');
+const AUTH_HTPASSWD = requireEnv('OBSIDIANQUARTZ_AUTH_HTPASSWD');
+const SESSION_SECRET = requireEnv('OBSIDIANQUARTZ_SESSION_SECRET');
 const PASSWORD_HASH = AUTH_HTPASSWD.slice(AUTH_HTPASSWD.indexOf(':') + 1);
 
 let QUESTIONS;
 try {
-  QUESTIONS = JSON.parse(requireEnv('KB_SECURITY_QUESTIONS'));
+  QUESTIONS = JSON.parse(requireEnv('OBSIDIANQUARTZ_SECURITY_QUESTIONS'));
   if (!Array.isArray(QUESTIONS) || QUESTIONS.length === 0) {
     throw new Error('must be a non-empty JSON array');
   }
@@ -47,7 +47,7 @@ try {
     }
   }
 } catch (err) {
-  console.error(`KB_SECURITY_QUESTIONS is invalid: ${err.message}`);
+  console.error(`OBSIDIANQUARTZ_SECURITY_QUESTIONS is invalid: ${err.message}`);
   process.exit(1);
 }
 
@@ -210,7 +210,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   // Intentionally not reachable via the public router (see docker-compose.yml
-  // kb-auth-pages rule) — only called internally by Traefik's forwardAuth on
+  // obsidianquartz-auth-pages rule) — only called internally by Traefik's forwardAuth on
   // every request to the main site. Kept path-gated here too as defense in
   // depth in case the router scoping ever changes.
   if (req.method === 'GET' && url.pathname === VERIFY_PATH) {
@@ -266,5 +266,5 @@ const REQUEST_TIMEOUT_MS = 30_000;
 server.setTimeout(REQUEST_TIMEOUT_MS, (socket) => socket.destroy());
 
 server.listen(PORT, () => {
-  console.log(`kb-auth-service listening on ${PORT}`);
+  console.log(`obsidianquartz-auth-service listening on ${PORT}`);
 });
