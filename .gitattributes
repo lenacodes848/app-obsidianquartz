@@ -1,0 +1,5 @@
+md-notebook/**/*.[pP][nN][gG] filter=lfs diff=lfs merge=lfs -text
+md-notebook/**/*.[jJ][pP][gG] filter=lfs diff=lfs merge=lfs -text
+md-notebook/**/*.[jJ][pP][eE][gG] filter=lfs diff=lfs merge=lfs -text
+md-notebook/**/*.[gG][iI][fF] filter=lfs diff=lfs merge=lfs -text
+md-notebook/**/*.[wW][eE][bB][pP] filter=lfs diff=lfs merge=lfs -text

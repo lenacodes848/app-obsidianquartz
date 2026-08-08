@@ -79,8 +79,24 @@ A few conventions that keep the site tidy:
 - Put an `index.md` at the root of `md-notebook/` — it becomes the homepage.
 - Any note with `draft: true` in its frontmatter is excluded from the published site.
 - Folders inside `md-notebook/` become sections; Quartz generates folder index pages automatically.
+- Drop images in as-is — screenshots, phone photos, whatever. The build compresses
+  and resizes them automatically (see [IMAGE-OPTIMIZATION-PLAN.md](./IMAGE-OPTIMIZATION-PLAN.md)),
+  so there's no need to shrink anything yourself first.
 
 ### 2. Commit and push
+
+Image files under `md-notebook/` are tracked via [Git LFS](https://git-lfs.com)
+(`.gitattributes`), so `git-lfs` needs to be installed once on whichever machine
+you write from — not just the VPS:
+
+```bash
+git lfs install     # once per machine, before your first `git add` of an image
+```
+
+Skipping this doesn't break anything visibly at commit time — the image just
+gets added as a normal (large) git object instead of an LFS pointer, silently
+defeating the point of tracking it. Run `git lfs status` before committing if
+you're ever unsure; images should show as `(LFS: ...)`, not `(Git: ...)`.
 
 ```bash
 cd /path/to/app-obsidianquartz

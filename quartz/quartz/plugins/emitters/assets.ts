@@ -22,6 +22,28 @@ function outputName(fp: FilePath): FilePath {
   return (slugifyFilePath(fp, true) + ext) as FilePath
 }
 
+// If git-lfs isn't installed wherever this build runs, LFS-tracked files
+// under md-notebook/ resolve to this ~130-byte pointer stub instead of the
+// real bytes — fail loudly here instead of feeding it to sharp or shipping
+// it as a "broken image" (see IMAGE-OPTIMIZATION-PLAN.md, #28).
+const lfsPointerSignature = "version https://git-lfs.github.com/spec/v1"
+
+async function assertNotLfsPointer(src: FilePath): Promise<void> {
+  const fd = await fs.promises.open(src, "r")
+  try {
+    const buf = Buffer.alloc(lfsPointerSignature.length)
+    const { bytesRead } = await fd.read(buf, 0, buf.length, 0)
+    if (buf.subarray(0, bytesRead).toString("utf8") === lfsPointerSignature) {
+      throw new Error(
+        `${src} is an unresolved Git LFS pointer, not real file data. ` +
+          "Install git-lfs and make sure `git lfs pull` ran before building (see DEPLOY.md).",
+      )
+    }
+  } finally {
+    await fd.close()
+  }
+}
+
 export const Assets: QuartzEmitterPlugin = () => {
   return {
     name: "Assets",
@@ -48,6 +70,7 @@ export const Assets: QuartzEmitterPlugin = () => {
         const dest = joinSegments(assetsPath, outputName(fp as FilePath)) as FilePath
         const dir = path.dirname(dest) as FilePath
         await fs.promises.mkdir(dir, { recursive: true }) // ensure dir exists
+        await assertNotLfsPointer(src)
 
         if (withCompressedImageExt(fp) !== fp) {
           await sharp(src)
