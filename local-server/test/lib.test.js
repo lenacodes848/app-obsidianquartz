@@ -35,7 +35,7 @@ test('sanitizeRedirect: rejects protocol-relative URLs', () => {
 
 test('sanitizeRedirect: rejects backslash-normalization bypass', () => {
   // Browsers treat a leading backslash as slash-equivalent when resolving a
-  // URL — this is the bypass found in app-obsidian-quartz's PR #5 review.
+  // URL — this is the bypass found in PR #5 review.
   assert.equal(sanitizeRedirect('/\\evil.com'), '/');
   assert.equal(sanitizeRedirect('/\\evil.com/x'), '/');
 });
