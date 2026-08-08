@@ -32,31 +32,57 @@ width of ~1600–2000px, re-encode to WebP. Originals stay untouched in git —
 decoupled from #28 (repo growth) on purpose.
 
 **Correction to the original decision comment**: it scoped this as an
-`assets.ts`-only change. That's not sufficient. The `<img src>` HTML is generated
-earlier, in `quartz/quartz/plugins/transformers/ofm.ts:230`, when a wikilink embed
-(`![[photo.png]]`) is parsed — it bakes the *original* extension into the `url`
-via `slugifyFilePath(fp)`. If `assets.ts` alone starts emitting `photo.webp` to
-disk, the HTML will still request `photo.png` and 404. Both files must change in
-lockstep, rewriting the extension to `.webp` for the same set of formats on both
-sides.
+`assets.ts`-only change. That's not sufficient — and a first-pass fix to this
+plan (patching the extension only in `ofm.ts`'s wikilink-embed branch) turned out
+to have the same class of gap, caught in review below.
+
+The `<img src>` HTML comes from two different syntaxes that both end up as image
+nodes: wikilink embeds (`![[photo.png]]`, handled by `ofm.ts:230`, which bakes the
+original extension into `url` via `slugifyFilePath(fp)`) and standard Markdown
+image syntax (`![alt](photo.png)`, which remark parses directly with no
+`ofm.ts` involvement at all). Both syntaxes normalize to the same mdast `image`
+node, get converted to hast by `remark-rehype`, and only then reach `CrawlLinks`
+(`quartz/quartz/plugins/transformers/links.ts`) as a plain `<img>` element — this
+is the first point in the pipeline where both syntaxes are indistinguishable and
+already unified. Patching only `ofm.ts`'s wikilink branch (the plan's original
+fix) leaves standard-syntax images requesting the untouched `.png`/`.jpg`
+filename against a `.webp` file `assets.ts` now writes — a 404, the exact bug the
+plan set out to fix, just in a second spot. The correct single choke point is
+`links.ts`, not `ofm.ts`: `CrawlLinks` already has an `img`/`video`/`audio`/`iframe`
+handling block at `links.ts:139-157` (right next to the `lazyLoad` line used in
+#29 below) that runs on every `<img>` regardless of source syntax, before
+resolving relative `src` paths.
 
 **Steps:**
-1. `assets.ts`: for `.png`/`.jpg`/`.jpeg`, pipe through
+1. `assets.ts`: for `.png`/`.jpg`/`.jpeg` (checked case-insensitively, matching
+   `ofm.ts:229`'s existing `.toLowerCase()` convention — screenshot/phone output,
+   this issue's own motivating example, is commonly `.PNG`/`.JPG`), pipe through
    `sharp(src).resize({ width: 1800, withoutEnlargement: true }).webp({ quality: ~80 })`
    and write to `dest` with `.webp` swapped in. All other extensions keep the
-   existing `copyFile` path unchanged.
-2. `ofm.ts:229-231`: when the matched extension is one of the compressible set,
-   rewrite the extension on `url` to `.webp` before returning the image node —
-   matching whatever set was chosen in step 1.
+   existing `copyFile` path unchanged. `assets.ts` computes the `src`/`dest`/`name`
+   mapping independently in two places — `getDependencyGraph` (used for
+   `--serve`/fast-rebuild) and `emit` (the actual copy). Factor that mapping into
+   one shared helper used by both, so the extension swap can't drift between the
+   dependency graph and the real output the way two hand-duplicated copies could.
+2. `links.ts:139-157`: in the existing `img`/`video`/`audio`/`iframe` block, for
+   `node.tagName === "img"` specifically, when `node.properties.src` is relative
+   (`!isAbsoluteUrl`) and its extension (lowercased) is one of the compressible
+   set from step 1, rewrite the extension to `.webp` before the existing
+   `transformLink(...)` call resolves the path. This single change covers both
+   wikilink embeds and standard Markdown image syntax, since both already reach
+   this point as identical `<img>` nodes.
 3. Deliberately leave `.gif` untouched (animation would be destroyed by a
    single-frame WebP re-encode; animated WebP output is more engineering for
    uncertain payoff on a notes vault — skip for v1).
 4. Add `quartz/quartz/plugins/emitters/assets.ts` and
-   `quartz/quartz/plugins/transformers/ofm.ts` to the "6 files carrying local
+   `quartz/quartz/plugins/transformers/links.ts` to the "6 files carrying local
    customizations" list in `DEPLOY.md`'s vendored-Quartz-update section, so a
    future `git subtree pull` doesn't silently overwrite them.
-5. Test: drop an oversized real image into `md-notebook/`, run a build, confirm
-   output format/size and that the page renders it correctly.
+5. Test both embed syntaxes: drop an oversized real image into `md-notebook/`,
+   reference it once via wikilink embed and once via standard Markdown image
+   syntax, run a build, and confirm both pages render the compressed `.webp`
+   correctly (the standard-syntax case is exactly what the first-pass fix
+   would have missed).
 
 ## Priority 2 — #29: lazy-loading
 
@@ -64,10 +90,13 @@ sides.
 cuts initial page weight on long image-heavy notes; native browser feature, no JS
 shipped; complements #27 (smaller images + fewer requests-per-pageview).
 
-**Cons:** possible pop-in/layout shift if dimensions aren't reserved (minor risk
-here — the wikilink embed syntax already sets explicit `width`/`height` via
-`ofm.ts:234-235`); no measurable win on short notes with only 1-2 images near the
-top.
+**Cons:** possible pop-in/layout shift if dimensions aren't reserved. The wikilink
+embed syntax *supports* explicit `width`/`height` (`ofm.ts:234-235`), but they
+default to the string `"auto"` unless the author manually appends `|WxH` to the
+alias — it's an opt-in per image, not an enforced default, so this risk isn't as
+mitigated as it might sound; standard Markdown image syntax has no equivalent
+sizing hook at all. No measurable win either way on short notes with only 1-2
+images near the top.
 
 **Mechanics:** standard `loading="lazy"` HTML attribute — browser-native
 scheduling based on scroll proximity, no `IntersectionObserver` polyfill needed in
@@ -97,9 +126,11 @@ protocol) — this is what keeps `.git` history flat regardless of image churn.
 **GitHub vs GitLab vs Gitea:** all three implement the same open Git LFS Batch API
 spec, so the client-side workflow (`git lfs install`, `.gitattributes`,
 `git lfs track`, `git lfs pull`) is identical regardless of host.
-- **GitHub** (current host): free tier is 1GB storage + 1GB bandwidth/month per
-  LFS data pack; overage needs paid data packs. The one host here with a real
-  quota to watch.
+- **GitHub** (current host): Free/Pro plans give 10 GiB storage + 10 GiB
+  bandwidth/month at no cost. GitHub discontinued prepaid data packs in favor of
+  post-paid metered billing beyond that: ~$0.07/GiB-month storage, ~$0.0875/GiB
+  bandwidth. At this repo's scale (currently 0 images), GitHub is comfortably the
+  most generous of the three free tiers here, not a quota to watch.
 - **GitLab**: same protocol; on GitLab.com, LFS objects count against the
   project/namespace storage quota (shared with repo + artifacts + packages).
   Self-hosted GitLab (CE/EE) has no artificial cap — bounded by your own disk or
@@ -137,7 +168,7 @@ body already flags under "Requires."
 
 ## Sequencing
 
-1. **#27** first — two-file (`assets.ts` + `ofm.ts`) change, per the corrected
+1. **#27** first — two-file (`assets.ts` + `links.ts`) change, per the corrected
    plan above.
 2. **#29** next — one-line config flip, cheap enough to batch into the same PR
    as #27 or a fast follow.
