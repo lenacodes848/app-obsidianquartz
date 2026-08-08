@@ -11,6 +11,7 @@ This is a read-only public deployment behind the VPS's existing Traefik. It publ
 - Hostinger VPS (Debian/Ubuntu) with SSH access as a sudo-capable user.
 - **The existing Traefik stack is already running**, and its Docker network named **`proxy`** exists. Verify with: `docker network ls | grep proxy`.
 - A **DNS A record** for your subdomain (e.g. `kb.example.com`) pointing at the VPS public IPv4 (add AAAA too if the VPS has IPv6). Traefik's HTTP-01 challenge needs this resolving first.
+- **`git-lfs`** — `md-notebook/` images are tracked via [Git LFS](https://git-lfs.com) (see `.gitattributes`); without it, `git clone`/`git pull` leaves ~130-byte pointer stubs instead of real image files. Install it *before* the first clone below.
 
 ---
 
@@ -65,11 +66,19 @@ If it's missing, the Traefik stack isn't up — start it first.
 ## Step 4 — Clone and configure
 
 ```bash
+sudo apt-get install -y git-lfs
+git lfs install                  # registers the LFS smudge/clean filters for this user, once per machine
+
 git clone https://github.com/lenacodes848/app-obsidianquartz.git knowledge-base
 cd knowledge-base
 cp .env.example .env
 nano .env          # set DOMAIN and BASE_URL to your real subdomain, e.g. kb.example.com
 ```
+
+`git lfs install` only needs to run once per machine (it writes to your global git
+config), but it must happen *before* the clone above — otherwise the initial
+checkout leaves LFS pointer stubs in place of real images, and `git lfs pull`
+would need to be run manually afterward to fix it up.
 
 You also need to set `KB_AUTH_HTPASSWD`, `KB_SECURITY_QUESTIONS`, and
 `KB_SESSION_SECRET` in `.env` before launching — see
@@ -100,6 +109,12 @@ cd knowledge-base
 git pull
 docker compose up -d --build         # rebuilds the static site with new notes
 ```
+
+With `git lfs install` already done once (Step 4), `git pull` transparently fetches
+and smudges any new/changed images — no extra command needed. If `git-lfs` is
+ever missing or the smudge filter didn't run, the build now fails loudly on the
+exact file (`Assets` emitter's LFS-pointer guard) rather than shipping a broken
+image, so a bad pull surfaces immediately instead of silently at request time.
 
 > Optional automation (cron/webhook) is out of scope for v1.
 
@@ -267,6 +282,7 @@ different machines.
 
 - A Linux server (Debian/Ubuntu) with Docker and the Docker Compose plugin installed.
 - Tailscale already installed and authenticated on the server, if you want remote access away from home.
+- **`git-lfs`** — see the note in the public deployment's [Prerequisites](#prerequisites) above; same requirement applies here.
 
 ---
 
@@ -308,6 +324,9 @@ If you're also running the public deployment's containers on this same machine, 
 ## Local deployment — Step 3: Clone and configure
 
 ```bash
+sudo apt-get install -y git-lfs
+git lfs install                  # once per machine, before the clone below
+
 git clone https://github.com/lenacodes848/app-obsidianquartz.git app-obsidianquartz
 cd app-obsidianquartz
 cp .env.example .env
@@ -340,6 +359,11 @@ cd app-obsidianquartz
 git pull
 docker compose -f docker-compose.local.yml up -d --build
 ```
+
+Same note as the public deployment's [Step 6](#step-6--updating-content-later):
+with `git lfs install` already done once, `git pull` fetches images
+transparently, and the build now fails loudly on an unresolved LFS pointer
+instead of shipping a broken image.
 
 ---
 

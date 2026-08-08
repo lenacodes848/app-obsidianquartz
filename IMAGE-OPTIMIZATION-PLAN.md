@@ -26,6 +26,8 @@ are actually carried out; each still needs its own go-ahead.
 
 ## Priority 1 — #27: compress/resize images before they enter the vault
 
+**Status: implemented in PR #35 (merged).**
+
 Decision already recorded on #27: build-time compression via `sharp` in the
 `Assets` emitter, mirroring the existing `ogImage.tsx` pattern. Resize to a max
 width of ~1600–2000px, re-encode to WebP. Originals stay untouched in git —
@@ -86,6 +88,8 @@ resolving relative `src` paths.
 
 ## Priority 2 — #29: lazy-loading
 
+**Status: implemented in PR #35 (merged).**
+
 **Pros:** defers offscreen image fetches until scroll proximity — meaningfully
 cuts initial page weight on long image-heavy notes; native browser feature, no JS
 shipped; complements #27 (smaller images + fewer requests-per-pageview).
@@ -115,6 +119,8 @@ customization #1 in `DEPLOY.md`.
    `Plugin.CrawlLinks({ markdownLinkResolution: "shortest", lazyLoad: true })`.
 
 ## Priority 3 — #28: Git LFS
+
+**Status: implemented** (PR pending — number filled in once opened).
 
 **Mechanics:** `.gitattributes` marks image extensions as LFS-tracked
 (`filter=lfs diff=lfs merge=lfs -text`). On `git add`, real bytes go to
