@@ -8,7 +8,7 @@
 
 const crypto = require('crypto');
 
-const COOKIE_NAME = 'kb_session';
+const COOKIE_NAME = 'obsidianquartz_session';
 
 function escapeHtml(str) {
   return String(str)
@@ -90,7 +90,7 @@ function isValidSession(cookieValue, secret) {
 // despite starting with a single "/". Resolving against a fixed internal
 // base and comparing origins catches all of these the same way the browser
 // itself would interpret them.
-const REDIRECT_BASE = 'http://kb-auth-internal.invalid';
+const REDIRECT_BASE = 'http://obsidianquartz-auth-internal.invalid';
 function sanitizeRedirect(rd) {
   if (!rd || typeof rd !== 'string') return '/';
   try {

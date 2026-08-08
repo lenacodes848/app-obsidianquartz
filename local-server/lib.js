@@ -119,7 +119,7 @@ function isSameOriginRequest(req) {
 }
 
 // Token-bucket login rate limiter. There's no reverse proxy in front of this
-// server (unlike the public deployment's Traefik kb-ratelimit-login
+// server (unlike the public deployment's Traefik obsidianquartz-ratelimit-login
 // middleware), so throttling has to happen here — matching Traefik's values
 // (average=5/min, burst=10) so behavior parity with the sibling deployment
 // is intentional, not arbitrary. `now` is injectable so this is testable

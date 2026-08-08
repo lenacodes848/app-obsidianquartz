@@ -1,11 +1,11 @@
 services:
-  kb:
+  obsidianquartz:
     build:
       context: .
       args:
         BASE_URL: ${BASE_URL}
-    image: public-knowledge-kb:latest
-    container_name: public-knowledge-kb
+    image: obsidianquartz:latest
+    container_name: obsidianquartz
     restart: unless-stopped
     networks:
       - proxy
@@ -13,76 +13,76 @@ services:
     labels:
       - "traefik.enable=true"
       # ROUTER: match the public host, terminate TLS via the existing 'letsencrypt' resolver
-      - "traefik.http.routers.kb.rule=Host(`${DOMAIN}`)"
-      - "traefik.http.routers.kb.entrypoints=websecure"
-      - "traefik.http.routers.kb.tls=true"
-      - "traefik.http.routers.kb.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.obsidianquartz.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.obsidianquartz.entrypoints=websecure"
+      - "traefik.http.routers.obsidianquartz.tls=true"
+      - "traefik.http.routers.obsidianquartz.tls.certresolver=letsencrypt"
       # SERVICE: tell Traefik which internal port the container serves on
-      - "traefik.http.services.kb.loadbalancer.server.port=8080"
+      - "traefik.http.services.obsidianquartz.loadbalancer.server.port=8080"
       # Belt-and-suspenders: pin which docker network Traefik should use to reach us
       - "traefik.docker.network=proxy"
       # SECURITY HEADERS middleware (safe for a static, read-only public site)
-      - "traefik.http.middlewares.kb-sec.headers.stsSeconds=31536000"
-      - "traefik.http.middlewares.kb-sec.headers.stsIncludeSubdomains=true"
-      - "traefik.http.middlewares.kb-sec.headers.contentTypeNosniff=true"
-      - "traefik.http.middlewares.kb-sec.headers.browserXssFilter=true"
-      - "traefik.http.middlewares.kb-sec.headers.referrerPolicy=strict-origin-when-cross-origin"
+      - "traefik.http.middlewares.obsidianquartz-sec.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.obsidianquartz-sec.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.obsidianquartz-sec.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.obsidianquartz-sec.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.obsidianquartz-sec.headers.referrerPolicy=strict-origin-when-cross-origin"
       # RATE LIMIT middleware: throttles requests per source IP before the
       # forward-auth check even runs, so scripted guessing gets slowed down
       # instead of running at full network speed. Generous enough that a
       # normal page load (many CSS/JS/image requests at once) won't trip it.
-      - "traefik.http.middlewares.kb-ratelimit.ratelimit.average=10"
-      - "traefik.http.middlewares.kb-ratelimit.ratelimit.burst=20"
+      - "traefik.http.middlewares.obsidianquartz-ratelimit.ratelimit.average=10"
+      - "traefik.http.middlewares.obsidianquartz-ratelimit.ratelimit.burst=20"
       # FORWARD AUTH middleware: delegates the "is this request allowed?"
-      # check to kb-auth-service (password + security questions, see
+      # check to obsidianquartz-auth-service (password + security questions, see
       # auth-service/). Applied to every path, including unlisted pages — a
       # shareable link still requires login once opened.
-      - "traefik.http.middlewares.kb-forwardauth.forwardauth.address=http://kb-auth-service:8081/_kb-auth/verify"
-      - "traefik.http.routers.kb.middlewares=kb-ratelimit,kb-sec,kb-forwardauth"
+      - "traefik.http.middlewares.obsidianquartz-forwardauth.forwardauth.address=http://obsidianquartz-auth-service:8081/_obsidianquartz-auth/verify"
+      - "traefik.http.routers.obsidianquartz.middlewares=obsidianquartz-ratelimit,obsidianquartz-sec,obsidianquartz-forwardauth"
 
-  kb-auth:
+  obsidianquartz-auth:
     build:
       context: ./auth-service
-    image: kb-auth-service:latest
-    container_name: kb-auth-service
+    image: obsidianquartz-auth-service:latest
+    container_name: obsidianquartz-auth-service
     restart: unless-stopped
     networks:
       - proxy
     # NO "ports:" section — reached over the proxy network only, both by
     # Traefik's internal forwardauth call above (any path) and by browsers
-    # hitting /_kb-auth/login or /_kb-auth/logout specifically (see the
-    # kb-auth-pages router rule below — /verify is deliberately excluded).
+    # hitting /_obsidianquartz-auth/login or /_obsidianquartz-auth/logout specifically (see the
+    # obsidianquartz-auth-pages router rule below — /verify is deliberately excluded).
     environment:
-      - KB_AUTH_HTPASSWD=${KB_AUTH_HTPASSWD:?KB_AUTH_HTPASSWD must be set in .env — see DEPLOY.md}
-      - KB_SECURITY_QUESTIONS=${KB_SECURITY_QUESTIONS:?KB_SECURITY_QUESTIONS must be set in .env — see DEPLOY.md}
-      - KB_SESSION_SECRET=${KB_SESSION_SECRET:?KB_SESSION_SECRET must be set in .env — see DEPLOY.md}
+      - OBSIDIANQUARTZ_AUTH_HTPASSWD=${OBSIDIANQUARTZ_AUTH_HTPASSWD:?OBSIDIANQUARTZ_AUTH_HTPASSWD must be set in .env — see DEPLOY.md}
+      - OBSIDIANQUARTZ_SECURITY_QUESTIONS=${OBSIDIANQUARTZ_SECURITY_QUESTIONS:?OBSIDIANQUARTZ_SECURITY_QUESTIONS must be set in .env — see DEPLOY.md}
+      - OBSIDIANQUARTZ_SESSION_SECRET=${OBSIDIANQUARTZ_SESSION_SECRET:?OBSIDIANQUARTZ_SESSION_SECRET must be set in .env — see DEPLOY.md}
     labels:
       - "traefik.enable=true"
       # ROUTER: the login/logout pages only, on the same host. Higher
-      # priority than the kb router below so these paths never get routed
-      # through kb-forwardauth (which would loop — you can't require login to
+      # priority than the obsidianquartz router below so these paths never get routed
+      # through obsidianquartz-forwardauth (which would loop — you can't require login to
       # reach the login page). Deliberately scoped to just these two exact
-      # paths — /_kb-auth/verify is NOT included here. Traefik's forwardauth
-      # call above reaches kb-auth-service directly over the proxy network
+      # paths — /_obsidianquartz-auth/verify is NOT included here. Traefik's forwardauth
+      # call above reaches obsidianquartz-auth-service directly over the proxy network
       # and never goes through this (or any) router, so /verify doesn't need
       # to be — and shouldn't be — publicly reachable: it would otherwise let
       # anyone probe "is this cookie still valid?" from outside without
       # loading a real page.
-      - "traefik.http.routers.kb-auth-pages.rule=Host(`${DOMAIN}`) && (Path(`/_kb-auth/login`) || Path(`/_kb-auth/logout`))"
-      - "traefik.http.routers.kb-auth-pages.entrypoints=websecure"
-      - "traefik.http.routers.kb-auth-pages.tls=true"
-      - "traefik.http.routers.kb-auth-pages.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.kb-auth-pages.priority=100"
-      - "traefik.http.routers.kb-auth-pages.middlewares=kb-sec,kb-ratelimit-login"
-      - "traefik.http.services.kb-auth.loadbalancer.server.port=8081"
+      - "traefik.http.routers.obsidianquartz-auth-pages.rule=Host(`${DOMAIN}`) && (Path(`/_obsidianquartz-auth/login`) || Path(`/_obsidianquartz-auth/logout`))"
+      - "traefik.http.routers.obsidianquartz-auth-pages.entrypoints=websecure"
+      - "traefik.http.routers.obsidianquartz-auth-pages.tls=true"
+      - "traefik.http.routers.obsidianquartz-auth-pages.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.obsidianquartz-auth-pages.priority=100"
+      - "traefik.http.routers.obsidianquartz-auth-pages.middlewares=obsidianquartz-sec,obsidianquartz-ratelimit-login"
+      - "traefik.http.services.obsidianquartz-auth.loadbalancer.server.port=8081"
       - "traefik.docker.network=proxy"
       # RATE LIMIT middleware just for the login endpoint: much stricter than
-      # the site-wide kb-ratelimit, since security-question answers are
+      # the site-wide obsidianquartz-ratelimit, since security-question answers are
       # lower-entropy than a bcrypt password and deserve tighter throttling
       # on the one endpoint where guessing actually matters.
-      - "traefik.http.middlewares.kb-ratelimit-login.ratelimit.average=5"
-      - "traefik.http.middlewares.kb-ratelimit-login.ratelimit.period=1m"
-      - "traefik.http.middlewares.kb-ratelimit-login.ratelimit.burst=10"
+      - "traefik.http.middlewares.obsidianquartz-ratelimit-login.ratelimit.average=5"
+      - "traefik.http.middlewares.obsidianquartz-ratelimit-login.ratelimit.period=1m"
+      - "traefik.http.middlewares.obsidianquartz-ratelimit-login.ratelimit.burst=10"
 
 networks:
   proxy:
