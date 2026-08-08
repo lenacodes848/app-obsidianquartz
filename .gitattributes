@@ -1,10 +1,5 @@
-md-notebook/**/*.png filter=lfs diff=lfs merge=lfs -text
-md-notebook/**/*.PNG filter=lfs diff=lfs merge=lfs -text
-md-notebook/**/*.jpg filter=lfs diff=lfs merge=lfs -text
-md-notebook/**/*.JPG filter=lfs diff=lfs merge=lfs -text
-md-notebook/**/*.jpeg filter=lfs diff=lfs merge=lfs -text
-md-notebook/**/*.JPEG filter=lfs diff=lfs merge=lfs -text
-md-notebook/**/*.gif filter=lfs diff=lfs merge=lfs -text
-md-notebook/**/*.GIF filter=lfs diff=lfs merge=lfs -text
-md-notebook/**/*.webp filter=lfs diff=lfs merge=lfs -text
-md-notebook/**/*.WEBP filter=lfs diff=lfs merge=lfs -text
+md-notebook/**/*.[pP][nN][gG] filter=lfs diff=lfs merge=lfs -text
+md-notebook/**/*.[jJ][pP][gG] filter=lfs diff=lfs merge=lfs -text
+md-notebook/**/*.[jJ][pP][eE][gG] filter=lfs diff=lfs merge=lfs -text
+md-notebook/**/*.[gG][iI][fF] filter=lfs diff=lfs merge=lfs -text
+md-notebook/**/*.[wW][eE][bB][pP] filter=lfs diff=lfs merge=lfs -text
