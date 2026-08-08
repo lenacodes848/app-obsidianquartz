@@ -417,7 +417,7 @@ git subtree pull --prefix=quartz quartz-upstream <tag-or-main> --squash
 
 Replace `<tag-or-main>` with the upstream tag you want to update to (e.g. `v4.5.0`) or `main` for the latest unreleased code.
 
-**6 files carry local customizations** (password-protected `/family` folder + `unlisted: true` shareable-link pages, added in PRs on top of the vanilla vendor) and are the files most likely to need manual conflict resolution on a pull — keep our logic, take upstream's surrounding changes:
+**6 files carry local customizations** (the `unlisted: true` shareable-link feature, added in PRs on top of the vanilla vendor) and are the files most likely to need manual conflict resolution on a pull — keep our logic, take upstream's surrounding changes:
 
 - `quartz/quartz.config.ts` (just `pageTitle`/`baseUrl` — trivial to resolve)
 - `quartz/quartz/components/Head.tsx`
@@ -426,4 +426,4 @@ Replace `<tag-or-main>` with the upstream tag you want to update to (e.g. `v4.5.
 - `quartz/quartz/plugins/emitters/folderPage.tsx`
 - `quartz/quartz/plugins/emitters/tagPage.tsx`
 
-Everything else under `quartz/` should merge cleanly. After a pull, rebuild and manually check a page under `/family` and a page flagged `unlisted: true` still behave as documented above before deploying.
+Everything else under `quartz/` should merge cleanly. After a pull, rebuild and manually check that a page flagged `unlisted: true` still behaves as documented above before deploying.
